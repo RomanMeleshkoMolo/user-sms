@@ -1,0 +1,59 @@
+const mongoose = require('../src/db');
+
+const messageSchema = new mongoose.Schema({
+  // ID беседы
+  conversationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Conversation',
+    required: true,
+    index: true,
+  },
+
+  // Отправитель
+  senderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+
+  // Получатель
+  receiverId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+
+  // Текст сообщения
+  text: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+
+  // Статус прочтения
+  isRead: {
+    type: Boolean,
+    default: false,
+  },
+
+  // Дата прочтения
+  readAt: {
+    type: Date,
+    default: null,
+  },
+
+  // Дата создания
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+// Индексы для быстрого поиска
+messageSchema.index({ conversationId: 1, createdAt: -1 });
+messageSchema.index({ senderId: 1 });
+messageSchema.index({ receiverId: 1 });
+
+const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
+
+module.exports = Message;

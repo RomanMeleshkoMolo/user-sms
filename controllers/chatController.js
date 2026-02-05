@@ -1,0 +1,336 @@
+const mongoose = require('mongoose');
+const Conversation = require('../models/conversationModel');
+const Message = require('../models/messageModel');
+const User = require('../models/userModel');
+
+// Получить userId из запроса
+function getReqUserId(req) {
+  return (
+    req.user?._id ||
+    req.user?.id ||
+    req.auth?.userId ||
+    req.regUserId ||
+    req.userId
+  );
+}
+
+/**
+ * GET /chats - Получить список всех чатов пользователя
+ */
+async function getConversations(req, res) {
+  try {
+    const userId = getReqUserId(req);
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // Получаем все чаты пользователя
+    const conversations = await Conversation.find({
+      participants: userObjectId,
+    })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    // Обогащаем данными о собеседнике
+    const enrichedConversations = await Promise.all(
+      conversations.map(async (conv) => {
+        // Находим собеседника (другого участника)
+        const otherParticipantId = conv.participants.find(
+          (p) => p.toString() !== userId.toString()
+        );
+
+        let otherUser = null;
+        if (otherParticipantId) {
+          otherUser = await User.findById(otherParticipantId)
+            .select('name age userPhoto isOnline lastSeen')
+            .lean();
+        }
+
+        // Получаем количество непрочитанных для текущего пользователя
+        const unreadCount = conv.unreadCount?.get?.(userId.toString()) || 0;
+
+        return {
+          _id: conv._id,
+          otherUser: otherUser ? {
+            _id: otherUser._id,
+            name: otherUser.name,
+            age: otherUser.age,
+            photo: otherUser.userPhoto?.[0]?.key || null,
+            isOnline: otherUser.isOnline || false,
+            lastSeen: otherUser.lastSeen,
+          } : null,
+          lastMessage: conv.lastMessage,
+          unreadCount,
+          updatedAt: conv.updatedAt,
+        };
+      })
+    );
+
+    console.log(`[chat] getConversations for user ${userId}: found ${enrichedConversations.length}`);
+
+    return res.json({ conversations: enrichedConversations });
+  } catch (e) {
+    console.error('[chat] getConversations error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * GET /chats/:recipientId/messages - Получить сообщения чата
+ */
+async function getMessages(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { recipientId } = req.params;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 30));
+    const skip = (page - 1) * limit;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!recipientId || !mongoose.Types.ObjectId.isValid(String(recipientId))) {
+      return res.status(400).json({ message: 'Invalid recipient id' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
+
+    // Ищем или создаём беседу
+    let conversation = await Conversation.findOne({
+      participants: { $all: [userObjectId, recipientObjectId] },
+    });
+
+    if (!conversation) {
+      // Чат ещё не существует - возвращаем пустой массив
+      return res.json({
+        messages: [],
+        conversationId: null,
+        page,
+        hasMore: false,
+      });
+    }
+
+    // Получаем сообщения
+    const messages = await Message.find({ conversationId: conversation._id })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit + 1)
+      .lean();
+
+    const hasMore = messages.length > limit;
+    const messagesToReturn = hasMore ? messages.slice(0, limit) : messages;
+
+    // Разворачиваем для хронологического порядка
+    messagesToReturn.reverse();
+
+    console.log(`[chat] getMessages for conversation ${conversation._id}: found ${messagesToReturn.length}`);
+
+    return res.json({
+      messages: messagesToReturn,
+      conversationId: conversation._id,
+      page,
+      hasMore,
+    });
+  } catch (e) {
+    console.error('[chat] getMessages error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * POST /chats/:recipientId/messages - Отправить сообщение
+ */
+async function sendMessage(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { recipientId } = req.params;
+    const { text } = req.body;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!recipientId || !mongoose.Types.ObjectId.isValid(String(recipientId))) {
+      return res.status(400).json({ message: 'Invalid recipient id' });
+    }
+
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      return res.status(400).json({ message: 'Message text is required' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
+    const messageText = text.trim();
+
+    // Ищем или создаём беседу
+    let conversation = await Conversation.findOne({
+      participants: { $all: [userObjectId, recipientObjectId] },
+    });
+
+    if (!conversation) {
+      // Создаём новую беседу
+      conversation = await Conversation.create({
+        participants: [userObjectId, recipientObjectId],
+        lastMessage: {
+          text: messageText,
+          senderId: userObjectId,
+          createdAt: new Date(),
+        },
+        unreadCount: new Map([[recipientId.toString(), 1]]),
+      });
+      console.log(`[chat] Created new conversation ${conversation._id}`);
+    }
+
+    // Создаём сообщение
+    const message = await Message.create({
+      conversationId: conversation._id,
+      senderId: userObjectId,
+      receiverId: recipientObjectId,
+      text: messageText,
+    });
+
+    // Обновляем беседу
+    const currentUnread = conversation.unreadCount?.get?.(recipientId.toString()) || 0;
+    await Conversation.findByIdAndUpdate(conversation._id, {
+      lastMessage: {
+        text: messageText,
+        senderId: userObjectId,
+        createdAt: message.createdAt,
+      },
+      [`unreadCount.${recipientId}`]: currentUnread + 1,
+      updatedAt: new Date(),
+    });
+
+    console.log(`[chat] Message sent from ${userId} to ${recipientId}`);
+
+    return res.status(201).json({
+      success: true,
+      message: {
+        _id: message._id,
+        conversationId: conversation._id,
+        senderId: message.senderId,
+        receiverId: message.receiverId,
+        text: message.text,
+        isRead: message.isRead,
+        createdAt: message.createdAt,
+      },
+    });
+  } catch (e) {
+    console.error('[chat] sendMessage error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * POST /chats/:conversationId/read - Отметить сообщения как прочитанные
+ */
+async function markAsRead(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { conversationId } = req.params;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!conversationId || !mongoose.Types.ObjectId.isValid(String(conversationId))) {
+      return res.status(400).json({ message: 'Invalid conversation id' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const convObjectId = new mongoose.Types.ObjectId(conversationId);
+
+    // Обновляем все непрочитанные сообщения
+    await Message.updateMany(
+      {
+        conversationId: convObjectId,
+        receiverId: userObjectId,
+        isRead: false,
+      },
+      {
+        isRead: true,
+        readAt: new Date(),
+      }
+    );
+
+    // Сбрасываем счётчик непрочитанных
+    await Conversation.findByIdAndUpdate(convObjectId, {
+      [`unreadCount.${userId}`]: 0,
+    });
+
+    console.log(`[chat] Marked messages as read for user ${userId} in conversation ${conversationId}`);
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('[chat] markAsRead error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * GET /chats/start/:recipientId - Начать/получить чат с пользователем
+ * Используется при переходе из профиля в чат
+ */
+async function startConversation(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { recipientId } = req.params;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!recipientId || !mongoose.Types.ObjectId.isValid(String(recipientId))) {
+      return res.status(400).json({ message: 'Invalid recipient id' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
+
+    // Ищем существующую беседу
+    let conversation = await Conversation.findOne({
+      participants: { $all: [userObjectId, recipientObjectId] },
+    });
+
+    // Если нет - создаём пустую
+    if (!conversation) {
+      conversation = await Conversation.create({
+        participants: [userObjectId, recipientObjectId],
+      });
+      console.log(`[chat] Created new conversation ${conversation._id}`);
+    }
+
+    // Получаем данные собеседника
+    const otherUser = await User.findById(recipientObjectId)
+      .select('name age userPhoto isOnline lastSeen')
+      .lean();
+
+    return res.json({
+      conversationId: conversation._id,
+      otherUser: otherUser ? {
+        _id: otherUser._id,
+        name: otherUser.name,
+        age: otherUser.age,
+        photo: otherUser.userPhoto?.[0]?.key || null,
+        isOnline: otherUser.isOnline || false,
+        lastSeen: otherUser.lastSeen,
+      } : null,
+    });
+  } catch (e) {
+    console.error('[chat] startConversation error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+module.exports = {
+  getConversations,
+  getMessages,
+  sendMessage,
+  markAsRead,
+  startConversation,
+};
