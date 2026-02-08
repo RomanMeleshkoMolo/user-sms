@@ -187,7 +187,7 @@ async function sendMessage(req, res) {
   try {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
-    const { text } = req.body;
+    const { text, replyTo } = req.body;
 
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -204,6 +204,16 @@ async function sendMessage(req, res) {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
     const messageText = text.trim();
+
+    // Подготовка данных replyTo
+    let replyToData = null;
+    if (replyTo && replyTo._id && replyTo.text) {
+      replyToData = {
+        _id: new mongoose.Types.ObjectId(replyTo._id),
+        text: replyTo.text,
+        senderId: replyTo.senderId ? new mongoose.Types.ObjectId(replyTo.senderId) : null,
+      };
+    }
 
     // Ищем или создаём беседу
     let conversation = await Conversation.findOne({
@@ -230,6 +240,7 @@ async function sendMessage(req, res) {
       senderId: userObjectId,
       receiverId: recipientObjectId,
       text: messageText,
+      replyTo: replyToData,
     });
 
     // Обновляем беседу
@@ -254,6 +265,7 @@ async function sendMessage(req, res) {
         senderId: message.senderId,
         receiverId: message.receiverId,
         text: message.text,
+        replyTo: message.replyTo || null,
         isRead: message.isRead,
         createdAt: message.createdAt,
       },

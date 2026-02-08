@@ -30,6 +30,13 @@ const messageSchema = new mongoose.Schema({
     trim: true,
   },
 
+  // Ответ на сообщение
+  replyTo: {
+    _id: { type: mongoose.Schema.Types.ObjectId },
+    text: { type: String },
+    senderId: { type: mongoose.Schema.Types.ObjectId },
+  },
+
   // Статус прочтения
   isRead: {
     type: Boolean,
