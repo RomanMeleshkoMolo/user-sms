@@ -386,10 +386,67 @@ async function startConversation(req, res) {
   }
 }
 
+/**
+ * DELETE /chats - Удалить чаты
+ */
+async function deleteConversations(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { conversationIds } = req.body;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!conversationIds || !Array.isArray(conversationIds) || conversationIds.length === 0) {
+      return res.status(400).json({ message: 'No conversation IDs provided' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // Проверяем, что пользователь участник этих чатов
+    const validConversationIds = [];
+    for (const convId of conversationIds) {
+      if (!mongoose.Types.ObjectId.isValid(String(convId))) continue;
+
+      const conversation = await Conversation.findOne({
+        _id: new mongoose.Types.ObjectId(convId),
+        participants: userObjectId,
+      });
+
+      if (conversation) {
+        validConversationIds.push(conversation._id);
+      }
+    }
+
+    if (validConversationIds.length === 0) {
+      return res.status(404).json({ message: 'No valid conversations found' });
+    }
+
+    // Удаляем сообщения из этих чатов
+    await Message.deleteMany({
+      conversationId: { $in: validConversationIds },
+    });
+
+    // Удаляем сами чаты
+    await Conversation.deleteMany({
+      _id: { $in: validConversationIds },
+    });
+
+    console.log(`[chat] Deleted ${validConversationIds.length} conversations for user ${userId}`);
+
+    return res.json({ success: true, deletedCount: validConversationIds.length });
+  } catch (e) {
+    console.error('[chat] deleteConversations error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
 module.exports = {
   getConversations,
   getMessages,
   sendMessage,
   markAsRead,
   startConversation,
+  deleteConversations,
 };
