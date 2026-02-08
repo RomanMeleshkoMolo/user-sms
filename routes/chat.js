@@ -8,6 +8,7 @@ const {
   sendMessage,
   markAsRead,
   startConversation,
+  deleteConversations,
 } = require('../controllers/chatController');
 
 // GET /chats - Получить список всех чатов пользователя
@@ -24,5 +25,8 @@ router.post('/chats/:recipientId/messages', authRequired, sendMessage);
 
 // POST /chats/:conversationId/read - Отметить сообщения как прочитанные
 router.post('/chats/:conversationId/read', authRequired, markAsRead);
+
+// DELETE /chats - Удалить чаты
+router.delete('/chats', authRequired, deleteConversations);
 
 module.exports = router;
