@@ -3,6 +3,35 @@ const Conversation = require('../models/conversationModel');
 const Message = require('../models/messageModel');
 const User = require('../models/userModel');
 
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+const REGION = process.env.AWS_REGION || 'eu-central-1';
+const BUCKET = process.env.S3_BUCKET || 'molo-user-photos';
+const PRESIGNED_TTL_SEC = Number(process.env.S3_GET_TTL_SEC || 3600);
+
+const s3 = new S3Client({
+  region: REGION,
+  credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+    ? {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      }
+    : undefined,
+});
+
+// Генерация presigned URL для S3
+async function getPhotoUrl(key) {
+  if (!key) return null;
+  try {
+    const cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key });
+    return await getSignedUrl(s3, cmd, { expiresIn: PRESIGNED_TTL_SEC });
+  } catch (e) {
+    console.error('[chat] getPhotoUrl error:', e);
+    return null;
+  }
+}
+
 // Получить userId из запроса
 function getReqUserId(req) {
   return (
@@ -43,10 +72,19 @@ async function getConversations(req, res) {
         );
 
         let otherUser = null;
+        let photoUrl = null;
         if (otherParticipantId) {
           otherUser = await User.findById(otherParticipantId)
             .select('name age userPhoto isOnline lastSeen')
             .lean();
+
+          // Получаем presigned URL для фото
+          if (otherUser?.userPhoto?.[0]) {
+            const photoKey = typeof otherUser.userPhoto[0] === 'object'
+              ? otherUser.userPhoto[0].key
+              : otherUser.userPhoto[0];
+            photoUrl = await getPhotoUrl(photoKey);
+          }
         }
 
         // Получаем количество непрочитанных для текущего пользователя
@@ -58,7 +96,7 @@ async function getConversations(req, res) {
             _id: otherUser._id,
             name: otherUser.name,
             age: otherUser.age,
-            photo: otherUser.userPhoto?.[0]?.key || null,
+            photo: photoUrl,
             isOnline: otherUser.isOnline || false,
             lastSeen: otherUser.lastSeen,
           } : null,
@@ -310,13 +348,22 @@ async function startConversation(req, res) {
       .select('name age userPhoto isOnline lastSeen')
       .lean();
 
+    // Получаем presigned URL для фото
+    let photoUrl = null;
+    if (otherUser?.userPhoto?.[0]) {
+      const photoKey = typeof otherUser.userPhoto[0] === 'object'
+        ? otherUser.userPhoto[0].key
+        : otherUser.userPhoto[0];
+      photoUrl = await getPhotoUrl(photoKey);
+    }
+
     return res.json({
       conversationId: conversation._id,
       otherUser: otherUser ? {
         _id: otherUser._id,
         name: otherUser.name,
         age: otherUser.age,
-        photo: otherUser.userPhoto?.[0]?.key || null,
+        photo: photoUrl,
         isOnline: otherUser.isOnline || false,
         lastSeen: otherUser.lastSeen,
       } : null,
