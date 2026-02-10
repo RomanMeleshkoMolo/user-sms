@@ -23,11 +23,30 @@ const messageSchema = new mongoose.Schema({
     required: true,
   },
 
+  // Тип сообщения
+  messageType: {
+    type: String,
+    enum: ['text', 'voice', 'image'],
+    default: 'text',
+  },
+
   // Текст сообщения
   text: {
     type: String,
-    required: true,
     trim: true,
+    default: '',
+  },
+
+  // Голосовое сообщение
+  voiceUrl: {
+    type: String,
+    default: null,
+  },
+
+  // Длительность голосового сообщения (в секундах)
+  voiceDuration: {
+    type: Number,
+    default: null,
   },
 
   // Ответ на сообщение
