@@ -75,7 +75,7 @@ async function getConversations(req, res) {
         let photoUrl = null;
         if (otherParticipantId) {
           otherUser = await User.findById(otherParticipantId)
-            .select('name age userPhoto isOnline lastSeen')
+            .select('name age userPhoto isOnline lastSeen city')
             .lean();
 
           // Получаем presigned URL для фото
@@ -97,6 +97,7 @@ async function getConversations(req, res) {
             name: otherUser.name,
             age: otherUser.age,
             photo: photoUrl,
+            city: otherUser.city || null,
             isOnline: otherUser.isOnline || false,
             lastSeen: otherUser.lastSeen,
           } : null,
@@ -187,7 +188,7 @@ async function sendMessage(req, res) {
   try {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
-    const { text, replyTo } = req.body;
+    const { text, replyTo, messageType = 'text', voiceUrl, voiceDuration } = req.body;
 
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -197,13 +198,20 @@ async function sendMessage(req, res) {
       return res.status(400).json({ message: 'Invalid recipient id' });
     }
 
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
-      return res.status(400).json({ message: 'Message text is required' });
+    // Проверка контента в зависимости от типа сообщения
+    if (messageType === 'text') {
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        return res.status(400).json({ message: 'Message text is required' });
+      }
+    } else if (messageType === 'voice') {
+      if (!voiceUrl) {
+        return res.status(400).json({ message: 'Voice URL is required' });
+      }
     }
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
-    const messageText = text.trim();
+    const messageText = text ? text.trim() : '';
 
     // Подготовка данных replyTo
     let replyToData = null;
@@ -220,12 +228,15 @@ async function sendMessage(req, res) {
       participants: { $all: [userObjectId, recipientObjectId] },
     });
 
+    // Текст для превью в списке чатов
+    const previewText = messageType === 'voice' ? '🎤 Голосовое сообщение' : messageText;
+
     if (!conversation) {
       // Создаём новую беседу
       conversation = await Conversation.create({
         participants: [userObjectId, recipientObjectId],
         lastMessage: {
-          text: messageText,
+          text: previewText,
           senderId: userObjectId,
           createdAt: new Date(),
         },
@@ -235,19 +246,28 @@ async function sendMessage(req, res) {
     }
 
     // Создаём сообщение
-    const message = await Message.create({
+    const messageData = {
       conversationId: conversation._id,
       senderId: userObjectId,
       receiverId: recipientObjectId,
+      messageType,
       text: messageText,
       replyTo: replyToData,
-    });
+    };
+
+    // Добавляем данные голосового сообщения
+    if (messageType === 'voice') {
+      messageData.voiceUrl = voiceUrl;
+      messageData.voiceDuration = voiceDuration || 0;
+    }
+
+    const message = await Message.create(messageData);
 
     // Обновляем беседу
     const currentUnread = conversation.unreadCount?.get?.(recipientId.toString()) || 0;
     await Conversation.findByIdAndUpdate(conversation._id, {
       lastMessage: {
-        text: messageText,
+        text: previewText,
         senderId: userObjectId,
         createdAt: message.createdAt,
       },
@@ -255,7 +275,7 @@ async function sendMessage(req, res) {
       updatedAt: new Date(),
     });
 
-    console.log(`[chat] Message sent from ${userId} to ${recipientId}`);
+    console.log(`[chat] ${messageType} message sent from ${userId} to ${recipientId}`);
 
     return res.status(201).json({
       success: true,
@@ -264,7 +284,10 @@ async function sendMessage(req, res) {
         conversationId: conversation._id,
         senderId: message.senderId,
         receiverId: message.receiverId,
+        messageType: message.messageType,
         text: message.text,
+        voiceUrl: message.voiceUrl || null,
+        voiceDuration: message.voiceDuration || null,
         replyTo: message.replyTo || null,
         isRead: message.isRead,
         createdAt: message.createdAt,
@@ -357,7 +380,7 @@ async function startConversation(req, res) {
 
     // Получаем данные собеседника
     const otherUser = await User.findById(recipientObjectId)
-      .select('name age userPhoto isOnline lastSeen')
+      .select('name age userPhoto isOnline lastSeen city')
       .lean();
 
     // Получаем presigned URL для фото
@@ -376,6 +399,7 @@ async function startConversation(req, res) {
         name: otherUser.name,
         age: otherUser.age,
         photo: photoUrl,
+        city: otherUser.city || null,
         isOnline: otherUser.isOnline || false,
         lastSeen: otherUser.lastSeen,
       } : null,
@@ -442,6 +466,38 @@ async function deleteConversations(req, res) {
   }
 }
 
+/**
+ * POST /chats/upload-voice - Загрузить голосовое сообщение
+ */
+async function uploadVoice(req, res) {
+  try {
+    const userId = getReqUserId(req);
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'No voice file uploaded' });
+    }
+
+    // Генерируем presigned URL для загруженного файла
+    const voiceKey = req.file.key;
+    const voiceUrl = await getPhotoUrl(voiceKey);
+
+    console.log(`[chat] Voice uploaded by user ${userId}: ${voiceKey}`);
+
+    return res.json({
+      success: true,
+      voiceKey,
+      voiceUrl,
+    });
+  } catch (e) {
+    console.error('[chat] uploadVoice error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
 module.exports = {
   getConversations,
   getMessages,
@@ -449,4 +505,5 @@ module.exports = {
   markAsRead,
   startConversation,
   deleteConversations,
+  uploadVoice,
 };
