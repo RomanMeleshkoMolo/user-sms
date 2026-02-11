@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 const Conversation = require('../models/conversationModel');
 const Message = require('../models/messageModel');
 const User = require('../models/userModel');
+const {
+  sendNewMessageNotification,
+  registerDeviceToken,
+  unregisterDeviceToken,
+} = require('../services/pushNotificationService');
 
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -88,7 +93,8 @@ async function getConversations(req, res) {
         }
 
         // Получаем количество непрочитанных для текущего пользователя
-        const unreadCount = conv.unreadCount?.get?.(userId.toString()) || 0;
+        // После .lean() Map превращается в обычный объект
+        const unreadCount = conv.unreadCount?.[userId.toString()] || 0;
 
         return {
           _id: conv._id,
@@ -276,6 +282,15 @@ async function sendMessage(req, res) {
     });
 
     console.log(`[chat] ${messageType} message sent from ${userId} to ${recipientId}`);
+
+    // Отправляем push-уведомление получателю
+    const sender = await User.findById(userObjectId).select('name').lean();
+    sendNewMessageNotification(
+      recipientId,
+      { _id: userObjectId, name: sender?.name },
+      previewText,
+      conversation._id
+    ).catch((err) => console.error('[chat] Push notification error:', err));
 
     return res.status(201).json({
       success: true,
@@ -498,6 +513,66 @@ async function uploadVoice(req, res) {
   }
 }
 
+/**
+ * POST /chats/push-token - Зарегистрировать FCM токен устройства
+ */
+async function registerPushToken(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { fcmToken, platform, deviceId } = req.body;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!fcmToken) {
+      return res.status(400).json({ message: 'FCM token is required' });
+    }
+
+    const result = await registerDeviceToken(userId, fcmToken, platform, deviceId);
+
+    if (result.success) {
+      console.log(`[chat] Push token registered for user ${userId}`);
+      return res.json({ success: true });
+    } else {
+      return res.status(500).json({ message: 'Failed to register token', error: result.error });
+    }
+  } catch (e) {
+    console.error('[chat] registerPushToken error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * DELETE /chats/push-token - Удалить FCM токен устройства
+ */
+async function unregisterPushToken(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { fcmToken } = req.body;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!fcmToken) {
+      return res.status(400).json({ message: 'FCM token is required' });
+    }
+
+    const result = await unregisterDeviceToken(fcmToken);
+
+    if (result.success) {
+      console.log(`[chat] Push token unregistered for user ${userId}`);
+      return res.json({ success: true });
+    } else {
+      return res.status(500).json({ message: 'Failed to unregister token', error: result.error });
+    }
+  } catch (e) {
+    console.error('[chat] unregisterPushToken error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
 module.exports = {
   getConversations,
   getMessages,
@@ -506,4 +581,6 @@ module.exports = {
   startConversation,
   deleteConversations,
   uploadVoice,
+  registerPushToken,
+  unregisterPushToken,
 };

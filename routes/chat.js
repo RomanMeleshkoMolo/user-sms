@@ -14,6 +14,8 @@ const {
   startConversation,
   deleteConversations,
   uploadVoice,
+  registerPushToken,
+  unregisterPushToken,
 } = require('../controllers/chatController');
 
 // S3 configuration for voice uploads
@@ -72,5 +74,11 @@ router.delete('/chats', authRequired, deleteConversations);
 
 // POST /chats/upload-voice - Загрузить голосовое сообщение
 router.post('/chats/upload-voice', authRequired, voiceUpload.single('voice'), uploadVoice);
+
+// POST /chats/push-token - Зарегистрировать FCM токен устройства
+router.post('/chats/push-token', authRequired, registerPushToken);
+
+// DELETE /chats/push-token - Удалить FCM токен устройства
+router.delete('/chats/push-token', authRequired, unregisterPushToken);
 
 module.exports = router;
