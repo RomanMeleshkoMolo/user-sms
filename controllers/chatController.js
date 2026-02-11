@@ -80,7 +80,7 @@ async function getConversations(req, res) {
         let photoUrl = null;
         if (otherParticipantId) {
           otherUser = await User.findById(otherParticipantId)
-            .select('name age userPhoto isOnline lastSeen city')
+            .select('name age userPhoto isOnline lastSeen city userLocation')
             .lean();
 
           // Получаем presigned URL для фото
@@ -103,7 +103,7 @@ async function getConversations(req, res) {
             name: otherUser.name,
             age: otherUser.age,
             photo: photoUrl,
-            city: otherUser.city || null,
+            city: otherUser.city || otherUser.userLocation || null,
             isOnline: otherUser.isOnline || false,
             lastSeen: otherUser.lastSeen,
           } : null,
@@ -395,7 +395,7 @@ async function startConversation(req, res) {
 
     // Получаем данные собеседника
     const otherUser = await User.findById(recipientObjectId)
-      .select('name age userPhoto isOnline lastSeen city')
+      .select('name age userPhoto isOnline lastSeen city userLocation')
       .lean();
 
     // Получаем presigned URL для фото
@@ -414,7 +414,7 @@ async function startConversation(req, res) {
         name: otherUser.name,
         age: otherUser.age,
         photo: photoUrl,
-        city: otherUser.city || null,
+        city: otherUser.city || otherUser.userLocation || null,
         isOnline: otherUser.isOnline || false,
         lastSeen: otherUser.lastSeen,
       } : null,

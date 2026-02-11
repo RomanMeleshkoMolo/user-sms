@@ -8,6 +8,8 @@ const userSchema = new mongoose.Schema({
   userPhoto: { type: Array, default: [] },
   isOnline: { type: Boolean, default: false },
   lastSeen: { type: Date, default: null },
+  city: { type: String, default: null },
+  userLocation: { type: String, default: null },
 });
 
 const User = mongoose.models.User || mongoose.model('User', userSchema);
