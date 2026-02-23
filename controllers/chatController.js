@@ -4,9 +4,11 @@ const Message = require('../models/messageModel');
 const User = require('../models/userModel');
 const {
   sendNewMessageNotification,
+  sendPushToUser,
   registerDeviceToken,
   unregisterDeviceToken,
 } = require('../services/pushNotificationService');
+const DeviceToken = require('../models/deviceTokenModel');
 const { emitToUser } = require('../src/socketManager');
 
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
@@ -581,6 +583,50 @@ async function unregisterPushToken(req, res) {
   }
 }
 
+/**
+ * GET /chats/debug/push/:userId - Проверить FCM токены и отправить тестовый push (без авторизации, только для отладки)
+ */
+async function debugPush(req, res) {
+  try {
+    const userId = req.params.userId;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(400).json({ message: 'Invalid userId' });
+    }
+
+    // Найти все токены пользователя
+    const tokens = await DeviceToken.find({ userId }).lean();
+
+    // Попробовать отправить тестовый push
+    let pushResult = null;
+    if (tokens.some(t => t.isActive)) {
+      pushResult = await sendPushToUser(userId, {
+        title: 'Тест FCM ✅',
+        body: 'Push уведомления работают!',
+        data: { type: 'test' },
+      });
+    } else {
+      pushResult = { success: false, reason: 'no_active_tokens' };
+    }
+
+    return res.json({
+      userId,
+      tokenCount: tokens.length,
+      activeTokenCount: tokens.filter(t => t.isActive).length,
+      tokens: tokens.map(t => ({
+        platform: t.platform,
+        isActive: t.isActive,
+        tokenPreview: t.fcmToken?.substring(0, 20) + '...',
+        createdAt: t.createdAt,
+      })),
+      pushResult,
+    });
+  } catch (e) {
+    console.error('[chat] debugPush error:', e);
+    return res.status(500).json({ message: 'Server error', error: e.message });
+  }
+}
+
 module.exports = {
   getConversations,
   getMessages,
@@ -591,4 +637,5 @@ module.exports = {
   uploadVoice,
   registerPushToken,
   unregisterPushToken,
+  debugPush,
 };
