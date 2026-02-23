@@ -16,6 +16,7 @@ const {
   uploadVoice,
   registerPushToken,
   unregisterPushToken,
+  debugPush,
 } = require('../controllers/chatController');
 
 // S3 configuration for voice uploads
@@ -80,5 +81,8 @@ router.post('/chats/push-token', authRequired, registerPushToken);
 
 // DELETE /chats/push-token - Удалить FCM токен устройства
 router.delete('/chats/push-token', authRequired, unregisterPushToken);
+
+// GET /chats/debug/push/:userId - Проверить токены и отправить тестовый push (без авторизации, только для отладки)
+router.get('/chats/debug/push/:userId', debugPush);
 
 module.exports = router;
