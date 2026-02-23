@@ -7,6 +7,7 @@ const {
   registerDeviceToken,
   unregisterDeviceToken,
 } = require('../services/pushNotificationService');
+const { emitToUser } = require('../src/socketManager');
 
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -246,7 +247,7 @@ async function sendMessage(req, res) {
           senderId: userObjectId,
           createdAt: new Date(),
         },
-        unreadCount: new Map([[recipientId.toString(), 1]]),
+        unreadCount: new Map(),
       });
       console.log(`[chat] Created new conversation ${conversation._id}`);
     }
@@ -292,21 +293,28 @@ async function sendMessage(req, res) {
       conversation._id
     ).catch((err) => console.error('[chat] Push notification error:', err));
 
+    // Отправляем real-time уведомление через Socket.IO
+    const messagePayload = {
+      _id: message._id,
+      conversationId: conversation._id,
+      senderId: message.senderId,
+      receiverId: message.receiverId,
+      messageType: message.messageType,
+      text: message.text,
+      voiceUrl: message.voiceUrl || null,
+      voiceDuration: message.voiceDuration || null,
+      replyTo: message.replyTo || null,
+      isRead: message.isRead,
+      createdAt: message.createdAt,
+    };
+    emitToUser(recipientId, 'new_message', {
+      message: messagePayload,
+      senderId: String(userId),
+    });
+
     return res.status(201).json({
       success: true,
-      message: {
-        _id: message._id,
-        conversationId: conversation._id,
-        senderId: message.senderId,
-        receiverId: message.receiverId,
-        messageType: message.messageType,
-        text: message.text,
-        voiceUrl: message.voiceUrl || null,
-        voiceDuration: message.voiceDuration || null,
-        replyTo: message.replyTo || null,
-        isRead: message.isRead,
-        createdAt: message.createdAt,
-      },
+      message: messagePayload,
     });
   } catch (e) {
     console.error('[chat] sendMessage error:', e);
