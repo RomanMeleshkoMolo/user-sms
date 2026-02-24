@@ -308,6 +308,7 @@ async function sendMessage(req, res) {
       replyTo: message.replyTo || null,
       isRead: message.isRead,
       createdAt: message.createdAt,
+      heartedBy: message.heartedBy || [],
     };
     emitToUser(recipientId, 'new_message', {
       message: messagePayload,
@@ -584,6 +585,60 @@ async function unregisterPushToken(req, res) {
 }
 
 /**
+ * POST /chats/messages/:messageId/heart - Поставить/снять реакцию сердечком
+ */
+async function toggleHeartReaction(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { messageId } = req.params;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!messageId || !mongoose.Types.ObjectId.isValid(String(messageId))) {
+      return res.status(400).json({ message: 'Invalid message id' });
+    }
+
+    const message = await Message.findById(messageId);
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const alreadyHearted = message.heartedBy.some(
+      (id) => id.toString() === userId.toString()
+    );
+
+    let updatedMessage;
+    if (alreadyHearted) {
+      updatedMessage = await Message.findByIdAndUpdate(
+        messageId,
+        { $pull: { heartedBy: userObjectId } },
+        { new: true }
+      );
+    } else {
+      updatedMessage = await Message.findByIdAndUpdate(
+        messageId,
+        { $addToSet: { heartedBy: userObjectId } },
+        { new: true }
+      );
+    }
+
+    console.log(`[chat] Heart toggled by ${userId} on message ${messageId}: hearted=${!alreadyHearted}`);
+
+    return res.json({
+      success: true,
+      hearted: !alreadyHearted,
+      heartedBy: updatedMessage.heartedBy,
+    });
+  } catch (e) {
+    console.error('[chat] toggleHeartReaction error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
  * GET /chats/debug/push/:userId - Проверить FCM токены и отправить тестовый push (без авторизации, только для отладки)
  */
 async function debugPush(req, res) {
@@ -638,4 +693,5 @@ module.exports = {
   registerPushToken,
   unregisterPushToken,
   debugPush,
+  toggleHeartReaction,
 };

@@ -17,6 +17,7 @@ const {
   registerPushToken,
   unregisterPushToken,
   debugPush,
+  toggleHeartReaction,
 } = require('../controllers/chatController');
 
 // S3 configuration for voice uploads
@@ -81,6 +82,9 @@ router.post('/chats/push-token', authRequired, registerPushToken);
 
 // DELETE /chats/push-token - Удалить FCM токен устройства
 router.delete('/chats/push-token', authRequired, unregisterPushToken);
+
+// POST /chats/messages/:messageId/heart - Поставить/снять реакцию сердечком
+router.post('/chats/messages/:messageId/heart', authRequired, toggleHeartReaction);
 
 // GET /chats/debug/push/:userId - Проверить токены и отправить тестовый push (без авторизации, только для отладки)
 router.get('/chats/debug/push/:userId', debugPush);
