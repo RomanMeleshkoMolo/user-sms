@@ -68,6 +68,12 @@ const messageSchema = new mongoose.Schema({
     default: null,
   },
 
+  // Реакция сердечком (массив ID пользователей)
+  heartedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+
   // Дата создания
   createdAt: {
     type: Date,
