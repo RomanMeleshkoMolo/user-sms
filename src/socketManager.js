@@ -31,6 +31,23 @@ function initSocketIO(httpServer) {
     // Join personal room
     socket.join(`user:${socket.userId}`);
 
+    // Typing indicator
+    socket.on('typing_start', ({ recipientId }) => {
+      if (!recipientId) return;
+      io.to(`user:${String(recipientId)}`).emit('typing', {
+        senderId: socket.userId,
+        isTyping: true,
+      });
+    });
+
+    socket.on('typing_stop', ({ recipientId }) => {
+      if (!recipientId) return;
+      io.to(`user:${String(recipientId)}`).emit('typing', {
+        senderId: socket.userId,
+        isTyping: false,
+      });
+    });
+
     socket.on('disconnect', () => {
       console.log(`[socket-chat] User disconnected: ${socket.userId}`);
     });

@@ -627,6 +627,15 @@ async function toggleHeartReaction(req, res) {
 
     console.log(`[chat] Heart toggled by ${userId} on message ${messageId}: hearted=${!alreadyHearted}`);
 
+    // Уведомляем второго участника через Socket.IO
+    const otherUserId = message.senderId.toString() === userId.toString()
+      ? message.receiverId
+      : message.senderId;
+    emitToUser(otherUserId, 'heart_reaction', {
+      messageId: String(messageId),
+      heartedBy: updatedMessage.heartedBy,
+    });
+
     return res.json({
       success: true,
       hearted: !alreadyHearted,
