@@ -239,20 +239,24 @@ async function sendMessage(req, res) {
       participants: { $all: [userObjectId, recipientObjectId] },
     });
 
-    // Текст для превью в списке чатов
-    const previewText = messageType === 'voice'
+    // Текст для push-уведомления (сервер не может расшифровать E2E)
+    const pushText = messageType === 'voice'
       ? '🎤 Голосовое сообщение'
-      : (nonce ? '🔒 Зашифрованное сообщение' : messageText);
+      : (nonce ? 'Новое сообщение' : messageText);
+
+    // Данные для lastMessage: для E2E храним шифртекст + nonce, чтобы клиент мог расшифровать
+    const lastMessageData = {
+      text: messageType === 'voice' ? '🎤 Голосовое сообщение' : messageText,
+      nonce: messageType === 'text' ? (nonce || null) : null,
+      senderId: userObjectId,
+      createdAt: new Date(),
+    };
 
     if (!conversation) {
       // Создаём новую беседу
       conversation = await Conversation.create({
         participants: [userObjectId, recipientObjectId],
-        lastMessage: {
-          text: previewText,
-          senderId: userObjectId,
-          createdAt: new Date(),
-        },
+        lastMessage: lastMessageData,
         unreadCount: new Map(),
       });
       console.log(`[chat] Created new conversation ${conversation._id}`);
@@ -280,11 +284,7 @@ async function sendMessage(req, res) {
     // Обновляем беседу
     const currentUnread = conversation.unreadCount?.get?.(recipientId.toString()) || 0;
     await Conversation.findByIdAndUpdate(conversation._id, {
-      lastMessage: {
-        text: previewText,
-        senderId: userObjectId,
-        createdAt: message.createdAt,
-      },
+      lastMessage: { ...lastMessageData, createdAt: message.createdAt },
       [`unreadCount.${recipientId}`]: currentUnread + 1,
       updatedAt: new Date(),
     });
@@ -296,7 +296,7 @@ async function sendMessage(req, res) {
     sendNewMessageNotification(
       recipientId,
       { _id: userObjectId, name: sender?.name },
-      previewText,
+      pushText,
       conversation._id
     ).catch((err) => console.error('[chat] Push notification error:', err));
 

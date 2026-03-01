@@ -11,6 +11,7 @@ const conversationSchema = new mongoose.Schema({
   // Последнее сообщение для превью
   lastMessage: {
     text: { type: String, default: '' },
+    nonce: { type: String, default: null },
     senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     createdAt: { type: Date, default: Date.now },
   },
