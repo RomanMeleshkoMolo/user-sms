@@ -147,8 +147,8 @@ async function sendPushToUser(userId, notification) {
  */
 async function sendNewMessageNotification(recipientId, sender, messageText, conversationId) {
   const notification = {
-    title: 'Новое сообщение',
-    body: `${sender.name || 'Пользователь'}: ${messageText || 'Голосовое сообщение'}`,
+    title: sender.name || 'Пользователь',
+    body: messageText || 'Голосовое сообщение',
     data: {
       type: 'new_message',
       conversationId: conversationId?.toString() || '',
