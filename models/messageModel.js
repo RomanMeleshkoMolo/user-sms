@@ -68,6 +68,12 @@ const messageSchema = new mongoose.Schema({
     default: null,
   },
 
+  // Nonce для E2E шифрования (base64). Если null — сообщение не зашифровано
+  nonce: {
+    type: String,
+    default: null,
+  },
+
   // Реакция сердечком (массив ID пользователей)
   heartedBy: [{
     type: mongoose.Schema.Types.ObjectId,

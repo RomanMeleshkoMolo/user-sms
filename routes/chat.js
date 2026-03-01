@@ -18,6 +18,10 @@ const {
   unregisterPushToken,
   debugPush,
   toggleHeartReaction,
+  registerPublicKey,
+  getPublicKey,
+  storeKeyBackup,
+  getKeyBackup,
 } = require('../controllers/chatController');
 
 // S3 configuration for voice uploads
@@ -85,6 +89,19 @@ router.delete('/chats/push-token', authRequired, unregisterPushToken);
 
 // POST /chats/messages/:messageId/heart - Поставить/снять реакцию сердечком
 router.post('/chats/messages/:messageId/heart', authRequired, toggleHeartReaction);
+
+// POST /chats/keys/register - Сохранить публичный E2E ключ
+router.post('/chats/keys/register', authRequired, registerPublicKey);
+
+// POST /chats/keys/backup - Сохранить зашифрованный бекап приватного ключа
+// ВАЖНО: должен быть ПЕРЕД /chats/keys/:userId иначе Express перехватит 'backup' как userId
+router.post('/chats/keys/backup', authRequired, storeKeyBackup);
+
+// GET /chats/keys/backup - Получить свой зашифрованный бекап приватного ключа
+router.get('/chats/keys/backup', authRequired, getKeyBackup);
+
+// GET /chats/keys/:userId - Получить публичный E2E ключ пользователя
+router.get('/chats/keys/:userId', authRequired, getPublicKey);
 
 // GET /chats/debug/push/:userId - Проверить токены и отправить тестовый push (без авторизации, только для отладки)
 router.get('/chats/debug/push/:userId', debugPush);

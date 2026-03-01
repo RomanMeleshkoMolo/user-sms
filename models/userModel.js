@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema({
   lastSeen: { type: Date, default: null },
   city: { type: String, default: null },
   userLocation: { type: String, default: null },
+  publicKey: { type: String, default: null }, // X25519 public key для E2E шифрования (base64)
+  encryptedKeyBackup: { type: String, default: null }, // Зашифрованный приватный ключ (бекап, восстановление после переустановки)
 });
 
 const User = mongoose.models.User || mongoose.model('User', userSchema);

@@ -197,7 +197,9 @@ async function sendMessage(req, res) {
   try {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
-    const { text, replyTo, messageType = 'text', voiceUrl, voiceDuration } = req.body;
+    const { text, replyTo, messageType = 'text', voiceUrl, voiceDuration, nonce = null } = req.body;
+
+    console.log(`[chat][E2E DEBUG] sendMessage from ${userId} → type=${messageType}, nonce=${nonce ? '✅ ЕСТЬ (зашифровано)' : '❌ НЕТ (открытый текст)'}, text_preview="${text ? text.substring(0, 30) : ''}..."`);
 
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -238,7 +240,9 @@ async function sendMessage(req, res) {
     });
 
     // Текст для превью в списке чатов
-    const previewText = messageType === 'voice' ? '🎤 Голосовое сообщение' : messageText;
+    const previewText = messageType === 'voice'
+      ? '🎤 Голосовое сообщение'
+      : (nonce ? '🔒 Зашифрованное сообщение' : messageText);
 
     if (!conversation) {
       // Создаём новую беседу
@@ -261,6 +265,7 @@ async function sendMessage(req, res) {
       receiverId: recipientObjectId,
       messageType,
       text: messageText,
+      nonce: nonce || null,
       replyTo: replyToData,
     };
 
@@ -303,6 +308,7 @@ async function sendMessage(req, res) {
       receiverId: message.receiverId,
       messageType: message.messageType,
       text: message.text,
+      nonce: message.nonce || null,
       voiceUrl: message.voiceUrl || null,
       voiceDuration: message.voiceDuration || null,
       replyTo: message.replyTo || null,
@@ -691,6 +697,110 @@ async function debugPush(req, res) {
   }
 }
 
+/**
+ * POST /chats/keys/register — Сохранить публичный ключ пользователя (E2E)
+ */
+async function registerPublicKey(req, res) {
+  try {
+    const userId = getReqUserId(req);
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { publicKey } = req.body;
+    if (!publicKey || typeof publicKey !== 'string') {
+      return res.status(400).json({ message: 'publicKey is required' });
+    }
+
+    await User.findByIdAndUpdate(userId, { publicKey });
+
+    console.log(`[chat] Registered public key for user ${userId}`);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('[chat] registerPublicKey error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * GET /chats/keys/:userId — Получить публичный ключ пользователя (E2E)
+ */
+async function getPublicKey(req, res) {
+  try {
+    const requesterId = getReqUserId(req);
+
+    if (!requesterId || !mongoose.Types.ObjectId.isValid(String(requesterId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { userId } = req.params;
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(400).json({ message: 'Invalid userId' });
+    }
+
+    const user = await User.findById(userId).select('publicKey').lean();
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    return res.json({ publicKey: user.publicKey || null });
+  } catch (e) {
+    console.error('[chat] getPublicKey error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * POST /chats/keys/backup — Сохранить зашифрованный бекап приватного ключа (E2E)
+ * Ключ зашифрован на клиенте (nacl.secretbox), сервер не может его расшифровать.
+ */
+async function storeKeyBackup(req, res) {
+  try {
+    const userId = getReqUserId(req);
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { encryptedBackup } = req.body;
+    if (!encryptedBackup || typeof encryptedBackup !== 'string') {
+      return res.status(400).json({ message: 'encryptedBackup is required' });
+    }
+
+    await User.findByIdAndUpdate(userId, { encryptedKeyBackup: encryptedBackup });
+
+    console.log(`[chat] Stored E2E key backup for user ${userId}`);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('[chat] storeKeyBackup error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * GET /chats/keys/backup — Получить свой зашифрованный бекап приватного ключа (E2E)
+ */
+async function getKeyBackup(req, res) {
+  try {
+    const userId = getReqUserId(req);
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const user = await User.findById(userId).select('encryptedKeyBackup').lean();
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    return res.json({ encryptedBackup: user.encryptedKeyBackup || null });
+  } catch (e) {
+    console.error('[chat] getKeyBackup error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
 module.exports = {
   getConversations,
   getMessages,
@@ -703,4 +813,8 @@ module.exports = {
   unregisterPushToken,
   debugPush,
   toggleHeartReaction,
+  registerPublicKey,
+  getPublicKey,
+  storeKeyBackup,
+  getKeyBackup,
 };
