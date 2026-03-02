@@ -752,10 +752,9 @@ async function getPublicKey(req, res) {
 }
 
 /**
- * POST /chats/keys/backup — Сохранить зашифрованный бекап приватного ключа (E2E)
- * Ключ зашифрован на клиенте (nacl.secretbox), сервер не может его расшифровать.
+ * DELETE /chats/all — Удалить все чаты пользователя (при переустановке с новыми E2E ключами)
  */
-async function storeKeyBackup(req, res) {
+async function deleteAllChats(req, res) {
   try {
     const userId = getReqUserId(req);
 
@@ -763,40 +762,20 @@ async function storeKeyBackup(req, res) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const { encryptedBackup } = req.body;
-    if (!encryptedBackup || typeof encryptedBackup !== 'string') {
-      return res.status(400).json({ message: 'encryptedBackup is required' });
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const conversations = await Conversation.find({ participants: userObjectId }).select('_id').lean();
+    const convIds = conversations.map(c => c._id);
+
+    if (convIds.length > 0) {
+      await Message.deleteMany({ conversationId: { $in: convIds } });
+      await Conversation.deleteMany({ _id: { $in: convIds } });
     }
 
-    await User.findByIdAndUpdate(userId, { encryptedKeyBackup: encryptedBackup });
-
-    console.log(`[chat] Stored E2E key backup for user ${userId}`);
-    return res.json({ ok: true });
+    console.log(`[chat] Deleted all ${convIds.length} conversations for user ${userId} (new E2E keys)`);
+    return res.json({ success: true, deletedCount: convIds.length });
   } catch (e) {
-    console.error('[chat] storeKeyBackup error:', e);
-    return res.status(500).json({ message: 'Server error' });
-  }
-}
-
-/**
- * GET /chats/keys/backup — Получить свой зашифрованный бекап приватного ключа (E2E)
- */
-async function getKeyBackup(req, res) {
-  try {
-    const userId = getReqUserId(req);
-
-    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
-
-    const user = await User.findById(userId).select('encryptedKeyBackup').lean();
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    return res.json({ encryptedBackup: user.encryptedKeyBackup || null });
-  } catch (e) {
-    console.error('[chat] getKeyBackup error:', e);
+    console.error('[chat] deleteAllChats error:', e);
     return res.status(500).json({ message: 'Server error' });
   }
 }
@@ -815,6 +794,5 @@ module.exports = {
   toggleHeartReaction,
   registerPublicKey,
   getPublicKey,
-  storeKeyBackup,
-  getKeyBackup,
+  deleteAllChats,
 };
