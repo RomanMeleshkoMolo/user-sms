@@ -713,9 +713,27 @@ async function registerPublicKey(req, res) {
       return res.status(400).json({ message: 'publicKey is required' });
     }
 
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // Находим всех собеседников ДО обновления ключа (чаты могут быть удалены позже)
+    const conversations = await Conversation.find({ participants: userObjectId })
+      .select('participants')
+      .lean();
+    const partnerIds = new Set();
+    conversations.forEach(conv => {
+      conv.participants.forEach(p => {
+        if (p.toString() !== userId.toString()) partnerIds.add(p.toString());
+      });
+    });
+
     await User.findByIdAndUpdate(userId, { publicKey });
 
-    console.log(`[chat] Registered public key for user ${userId}`);
+    // Уведомляем собеседников — их кэш публичного ключа устарел
+    for (const partnerId of partnerIds) {
+      emitToUser(partnerId, 'e2e_key_updated', { userId: String(userId) });
+    }
+
+    console.log(`[chat] Registered public key for user ${userId}, notified ${partnerIds.size} partners`);
     return res.json({ ok: true });
   } catch (e) {
     console.error('[chat] registerPublicKey error:', e);
