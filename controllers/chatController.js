@@ -88,10 +88,20 @@ async function getConversations(req, res) {
 
           // Получаем presigned URL для фото
           if (otherUser?.userPhoto?.[0]) {
-            const photoKey = typeof otherUser.userPhoto[0] === 'object'
-              ? otherUser.userPhoto[0].key
-              : otherUser.userPhoto[0];
+            const rawPhoto = otherUser.userPhoto[0];
+            const photoKey = typeof rawPhoto === 'object'
+              ? rawPhoto.key
+              : rawPhoto;
+            console.log('[chat] getConversations photo debug:', {
+              userId: otherParticipantId,
+              rawPhoto: JSON.stringify(rawPhoto),
+              photoKey,
+            });
             photoUrl = await getPhotoUrl(photoKey);
+            console.log('[chat] getConversations photoUrl:', photoUrl ? 'OK' : 'NULL');
+          } else {
+            console.log('[chat] getConversations: no userPhoto for user', otherParticipantId,
+              'userPhoto array:', JSON.stringify(otherUser?.userPhoto));
           }
         }
 
