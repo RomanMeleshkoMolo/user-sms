@@ -173,8 +173,12 @@ async function getMessages(req, res) {
       });
     }
 
-    // Получаем сообщения
-    const messages = await Message.find({ conversationId: conversation._id })
+    // Получаем сообщения (исключаем удалённые для текущего юзера)
+    const messages = await Message.find({
+      conversationId: conversation._id,
+      deletedForAll: { $ne: true },
+      deletedFor: { $nin: [userObjectId] },
+    })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit + 1)
@@ -808,6 +812,91 @@ async function deleteAllChats(req, res) {
   }
 }
 
+/**
+ * DELETE /chats/messages/:messageId - Удалить сообщение
+ * body: { deleteFor: 'me' | 'all' }
+ */
+async function deleteMessage(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { messageId } = req.params;
+    const { deleteFor } = req.body; // 'me' | 'all'
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    if (!messageId || !mongoose.Types.ObjectId.isValid(String(messageId))) {
+      return res.status(400).json({ message: 'Invalid messageId' });
+    }
+    if (!['me', 'all'].includes(deleteFor)) {
+      return res.status(400).json({ message: 'deleteFor must be "me" or "all"' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const message = await Message.findById(messageId);
+
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    if (deleteFor === 'all') {
+      // Удалить у всех — только отправитель может
+      if (message.senderId.toString() !== String(userId)) {
+        return res.status(403).json({ message: 'Only sender can delete for all' });
+      }
+      message.deletedForAll = true;
+      message.text = '';
+    } else {
+      // Удалить только для себя
+      if (!message.deletedFor.some(id => id.toString() === String(userId))) {
+        message.deletedFor.push(userObjectId);
+      }
+    }
+
+    await message.save();
+    console.log(`[chat] deleteMessage ${messageId} deleteFor=${deleteFor} by userId=${userId}`);
+
+    // Real-time: уведомляем второго участника через Socket.IO
+    if (deleteFor === 'all') {
+      const otherUserId = message.senderId.toString() === String(userId)
+        ? message.receiverId
+        : message.senderId;
+      emitToUser(otherUserId, 'message_deleted', {
+        messageId: String(messageId),
+        conversationId: String(message.conversationId),
+      });
+    }
+
+    // Обновляем lastMessage в conversation если удалённое было последним
+    const conversation = await Conversation.findById(message.conversationId);
+    if (conversation) {
+      // Строим фильтр: исключаем deletedForAll и, для deleteFor='me', deletedFor содержит userId
+      const filter = {
+        conversationId: message.conversationId,
+        deletedForAll: { $ne: true },
+      };
+      if (deleteFor === 'me') {
+        filter.deletedFor = { $nin: [userObjectId] };
+      }
+
+      const newLast = await Message.findOne(filter)
+        .sort({ createdAt: -1 })
+        .lean();
+
+      conversation.lastMessage = newLast
+        ? { text: newLast.text || '', nonce: newLast.nonce || null, senderId: newLast.senderId, createdAt: newLast.createdAt }
+        : { text: '', nonce: null, senderId: null, createdAt: conversation.createdAt };
+
+      await conversation.save();
+    }
+
+    return res.json({ success: true, messageId, deleteFor });
+  } catch (e) {
+    console.error('[chat] deleteMessage error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
 module.exports = {
   getConversations,
   getMessages,
@@ -823,4 +912,5 @@ module.exports = {
   registerPublicKey,
   getPublicKey,
   deleteAllChats,
+  deleteMessage,
 };

@@ -21,6 +21,7 @@ const {
   registerPublicKey,
   getPublicKey,
   deleteAllChats,
+  deleteMessage,
 } = require('../controllers/chatController');
 
 // S3 configuration for voice uploads
@@ -88,6 +89,9 @@ router.delete('/chats/push-token', authRequired, unregisterPushToken);
 
 // POST /chats/messages/:messageId/heart - Поставить/снять реакцию сердечком
 router.post('/chats/messages/:messageId/heart', authRequired, toggleHeartReaction);
+
+// DELETE /chats/messages/:messageId - Удалить сообщение (для себя или для всех)
+router.delete('/chats/messages/:messageId', authRequired, deleteMessage);
 
 // POST /chats/keys/register - Сохранить публичный E2E ключ
 router.post('/chats/keys/register', authRequired, registerPublicKey);

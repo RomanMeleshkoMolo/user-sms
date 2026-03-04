@@ -80,6 +80,18 @@ const messageSchema = new mongoose.Schema({
     ref: 'User',
   }],
 
+  // Удалено для конкретных пользователей (Удалить у меня)
+  deletedFor: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+
+  // Полностью удалено (Удалить у всех)
+  deletedForAll: {
+    type: Boolean,
+    default: false,
+  },
+
   // Дата создания
   createdAt: {
     type: Date,
