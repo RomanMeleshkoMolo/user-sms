@@ -14,6 +14,7 @@ const conversationSchema = new mongoose.Schema({
     nonce: { type: String, default: null },
     senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     createdAt: { type: Date, default: Date.now },
+    isRead: { type: Boolean, default: false },
   },
 
   // Количество непрочитанных сообщений для каждого участника
