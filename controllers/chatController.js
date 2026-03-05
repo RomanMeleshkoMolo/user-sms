@@ -289,6 +289,7 @@ async function sendMessage(req, res) {
       nonce: messageType === 'text' ? (nonce || null) : null,
       senderId: userObjectId,
       createdAt: new Date(),
+      isRead: false,
     };
 
     if (!conversation) {
@@ -412,10 +413,13 @@ async function markAsRead(req, res) {
       }
     );
 
-    // Сбрасываем счётчик непрочитанных + получаем собеседника для уведомления
+    // Сбрасываем счётчик непрочитанных + отмечаем lastMessage как прочитанное
     const conv = await Conversation.findByIdAndUpdate(
       convObjectId,
-      { [`unreadCount.${userId}`]: 0 },
+      {
+        [`unreadCount.${userId}`]: 0,
+        'lastMessage.isRead': true,
+      },
       { new: false, select: 'participants' }
     );
 
