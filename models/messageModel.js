@@ -37,8 +37,14 @@ const messageSchema = new mongoose.Schema({
     default: '',
   },
 
-  // Голосовое сообщение
+  // Голосовое сообщение (URL для воспроизведения — presigned, может устареть)
   voiceUrl: {
+    type: String,
+    default: null,
+  },
+
+  // S3 ключ голосового файла — используется для регенерации presigned URL
+  voiceKey: {
     type: String,
     default: null,
   },
@@ -46,6 +52,12 @@ const messageSchema = new mongoose.Schema({
   // Длительность голосового сообщения (в секундах)
   voiceDuration: {
     type: Number,
+    default: null,
+  },
+
+  // Nonce для E2E шифрования голосового сообщения (base64)
+  voiceNonce: {
+    type: String,
     default: null,
   },
 
@@ -100,7 +112,10 @@ const messageSchema = new mongoose.Schema({
 });
 
 // Индексы для быстрого поиска
-messageSchema.index({ conversationId: 1, createdAt: -1 });
+// Основной индекс для getMessages: фильтрация + сортировка
+messageSchema.index({ conversationId: 1, deletedForAll: 1, createdAt: -1 });
+// Для markAsRead: receiverId + isRead
+messageSchema.index({ conversationId: 1, receiverId: 1, isRead: 1 });
 messageSchema.index({ senderId: 1 });
 messageSchema.index({ receiverId: 1 });
 

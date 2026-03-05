@@ -17,6 +17,8 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const REGION = process.env.AWS_REGION || 'eu-central-1';
 const BUCKET = process.env.S3_BUCKET || 'molo-user-photos';
 const PRESIGNED_TTL_SEC = Number(process.env.S3_GET_TTL_SEC || 3600);
+// Кэшируем на 50 минут (URL действителен 60 мин — берём с запасом)
+const PRESIGNED_CACHE_TTL_MS = 50 * 60 * 1000;
 
 const s3 = new S3Client({
   region: REGION,
@@ -28,12 +30,23 @@ const s3 = new S3Client({
     : undefined,
 });
 
-// Генерация presigned URL для S3
+// In-memory кэш presigned URL: key → { url, expiresAt }
+const presignedUrlCache = new Map();
+
+// Генерация presigned URL для S3 с кэшированием
 async function getPhotoUrl(key) {
   if (!key) return null;
+
+  const cached = presignedUrlCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.url;
+  }
+
   try {
     const cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key });
-    return await getSignedUrl(s3, cmd, { expiresIn: PRESIGNED_TTL_SEC });
+    const url = await getSignedUrl(s3, cmd, { expiresIn: PRESIGNED_TTL_SEC });
+    presignedUrlCache.set(key, { url, expiresAt: Date.now() + PRESIGNED_CACHE_TTL_MS });
+    return url;
   } catch (e) {
     console.error('[chat] getPhotoUrl error:', e);
     return null;
@@ -185,7 +198,18 @@ async function getMessages(req, res) {
       .lean();
 
     const hasMore = messages.length > limit;
-    const messagesToReturn = hasMore ? messages.slice(0, limit) : messages;
+    const rawMessages = hasMore ? messages.slice(0, limit) : messages;
+
+    // Для голосовых сообщений регенерируем presigned URL из S3 ключа (URL из DB может устареть)
+    const messagesToReturn = await Promise.all(
+      rawMessages.map(async (msg) => {
+        if (msg.messageType === 'voice' && msg.voiceKey) {
+          const freshUrl = await getPhotoUrl(msg.voiceKey);
+          return { ...msg, voiceUrl: freshUrl || msg.voiceUrl };
+        }
+        return msg;
+      })
+    );
 
     // Разворачиваем для хронологического порядка
     messagesToReturn.reverse();
@@ -211,9 +235,10 @@ async function sendMessage(req, res) {
   try {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
-    const { text, replyTo, messageType = 'text', voiceUrl, voiceDuration, nonce = null } = req.body;
+    const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, nonce = null } = req.body;
 
-    console.log(`[chat][E2E DEBUG] sendMessage from ${userId} → type=${messageType}, nonce=${nonce ? '✅ ЕСТЬ (зашифровано)' : '❌ НЕТ (открытый текст)'}, text_preview="${text ? text.substring(0, 30) : ''}..."`);
+    const effectiveNonce = messageType === 'voice' ? voiceNonce : nonce;
+    console.log(`[chat][E2E DEBUG] sendMessage from ${userId} → type=${messageType}, nonce=${effectiveNonce ? '✅ ЕСТЬ (зашифровано)' : '❌ НЕТ (открытый текст)'}, text_preview="${text ? text.substring(0, 30) : ''}..."`);
 
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -290,7 +315,9 @@ async function sendMessage(req, res) {
     // Добавляем данные голосового сообщения
     if (messageType === 'voice') {
       messageData.voiceUrl = voiceUrl;
+      messageData.voiceKey = voiceKey || null; // S3 ключ для регенерации presigned URL
       messageData.voiceDuration = voiceDuration || 0;
+      messageData.voiceNonce = voiceNonce || null; // E2E nonce (если зашифровано)
     }
 
     const message = await Message.create(messageData);
@@ -305,15 +332,6 @@ async function sendMessage(req, res) {
 
     console.log(`[chat] ${messageType} message sent from ${userId} to ${recipientId}`);
 
-    // Отправляем push-уведомление получателю
-    const sender = await User.findById(userObjectId).select('name').lean();
-    sendNewMessageNotification(
-      recipientId,
-      { _id: userObjectId, name: sender?.name },
-      pushText,
-      conversation._id
-    ).catch((err) => console.error('[chat] Push notification error:', err));
-
     // Отправляем real-time уведомление через Socket.IO
     const messagePayload = {
       _id: message._id,
@@ -325,6 +343,7 @@ async function sendMessage(req, res) {
       nonce: message.nonce || null,
       voiceUrl: message.voiceUrl || null,
       voiceDuration: message.voiceDuration || null,
+      voiceNonce: message.voiceNonce || null,
       replyTo: message.replyTo || null,
       isRead: message.isRead,
       createdAt: message.createdAt,
@@ -334,6 +353,22 @@ async function sendMessage(req, res) {
       message: messagePayload,
       senderId: String(userId),
     });
+
+    // Push-уведомление — полностью вынесено из critical path
+    // User.findById перенесён внутрь, ответ клиенту уже отправлен
+    ;(async () => {
+      try {
+        const sender = await User.findById(userObjectId).select('name').lean();
+        await sendNewMessageNotification(
+          recipientId,
+          { _id: userObjectId, name: sender?.name },
+          pushText,
+          conversation._id
+        );
+      } catch (err) {
+        console.error('[chat] Push notification error:', err.message);
+      }
+    })();
 
     return res.status(201).json({
       success: true,
@@ -377,12 +412,22 @@ async function markAsRead(req, res) {
       }
     );
 
-    // Сбрасываем счётчик непрочитанных
-    await Conversation.findByIdAndUpdate(convObjectId, {
-      [`unreadCount.${userId}`]: 0,
-    });
+    // Сбрасываем счётчик непрочитанных + получаем собеседника для уведомления
+    const conv = await Conversation.findByIdAndUpdate(
+      convObjectId,
+      { [`unreadCount.${userId}`]: 0 },
+      { new: false, select: 'participants' }
+    );
 
     console.log(`[chat] Marked messages as read for user ${userId} in conversation ${conversationId}`);
+
+    // Уведомляем отправителя о прочтении его сообщений (для голубых галочек)
+    if (conv?.participants) {
+      const senderId = conv.participants.find((p) => p.toString() !== userId.toString());
+      if (senderId) {
+        emitToUser(senderId.toString(), 'messages_read', { conversationId });
+      }
+    }
 
     return res.json({ success: true });
   } catch (e) {
