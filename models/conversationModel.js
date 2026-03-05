@@ -28,9 +28,10 @@ const conversationSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-// Индекс для быстрого поиска чатов пользователя
-conversationSchema.index({ participants: 1 });
-conversationSchema.index({ updatedAt: -1 });
+// Составной индекс для getConversations: find({ participants }).sort({ updatedAt: -1 })
+conversationSchema.index({ participants: 1, updatedAt: -1 });
+// Уникальная пара участников — запрет дублирующих чатов между одними юзерами
+conversationSchema.index({ participants: 1 }, { unique: false });
 
 const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', conversationSchema);
 
