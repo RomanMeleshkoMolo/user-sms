@@ -14,6 +14,7 @@ const {
   startConversation,
   deleteConversations,
   uploadVoice,
+  uploadPhoto,
   registerPushToken,
   unregisterPushToken,
   debugPush,
@@ -80,6 +81,35 @@ router.delete('/chats', authRequired, deleteConversations);
 
 // POST /chats/upload-voice - Загрузить голосовое сообщение
 router.post('/chats/upload-voice', authRequired, voiceUpload.single('voice'), uploadVoice);
+
+const photoUpload = multer({
+  storage: multerS3({
+    s3: s3,
+    bucket: process.env.S3_BUCKET || 'molo-user-photos',
+    acl: 'private',
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    key: function (req, file, cb) {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const ext = path.extname(file.originalname) || '.jpg';
+      cb(null, `chat-photos/${uniqueSuffix}${ext}`);
+    },
+  }),
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20MB max
+  },
+  fileFilter: function (req, file, cb) {
+    // application/octet-stream — зашифрованный E2E файл (.enc)
+    const allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/octet-stream'];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid image file type'), false);
+    }
+  },
+});
+
+// POST /chats/upload-photo - Загрузить фото для чата
+router.post('/chats/upload-photo', authRequired, photoUpload.single('photo'), uploadPhoto);
 
 // POST /chats/push-token - Зарегистрировать FCM токен устройства
 router.post('/chats/push-token', authRequired, registerPushToken);

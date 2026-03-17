@@ -61,6 +61,24 @@ const messageSchema = new mongoose.Schema({
     default: null,
   },
 
+  // URL фото (presigned S3)
+  photoUrl: {
+    type: String,
+    default: null,
+  },
+
+  // S3 ключ фото — используется для регенерации presigned URL
+  photoKey: {
+    type: String,
+    default: null,
+  },
+
+  // Nonce для E2E шифрования фото (base64). Если null — фото не зашифровано
+  photoNonce: {
+    type: String,
+    default: null,
+  },
+
   // Ответ на сообщение
   replyTo: {
     _id: { type: mongoose.Schema.Types.ObjectId },
