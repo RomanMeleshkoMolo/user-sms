@@ -24,6 +24,12 @@ const conversationSchema = new mongoose.Schema({
     default: {},
   },
 
+  // Пользователи, для которых чат "удалён" (soft-delete при переустановке)
+  deletedFor: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+
   // Дата создания и обновления
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },

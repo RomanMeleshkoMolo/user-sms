@@ -77,9 +77,10 @@ async function getConversations(req, res) {
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    // Получаем все чаты пользователя
+    // Получаем все чаты пользователя (исключая soft-deleted)
     const conversations = await Conversation.find({
       participants: userObjectId,
+      deletedFor: { $ne: userObjectId },
     })
       .sort({ updatedAt: -1 })
       .lean();
@@ -200,12 +201,16 @@ async function getMessages(req, res) {
     const hasMore = messages.length > limit;
     const rawMessages = hasMore ? messages.slice(0, limit) : messages;
 
-    // Для голосовых сообщений регенерируем presigned URL из S3 ключа (URL из DB может устареть)
+    // Для голосовых и фото сообщений регенерируем presigned URL из S3 ключа (URL из DB может устареть)
     const messagesToReturn = await Promise.all(
       rawMessages.map(async (msg) => {
         if (msg.messageType === 'voice' && msg.voiceKey) {
           const freshUrl = await getPhotoUrl(msg.voiceKey);
           return { ...msg, voiceUrl: freshUrl || msg.voiceUrl };
+        }
+        if (msg.messageType === 'image' && msg.photoKey) {
+          const freshUrl = await getPhotoUrl(msg.photoKey);
+          return { ...msg, photoUrl: freshUrl || msg.photoUrl };
         }
         return msg;
       })
@@ -235,10 +240,13 @@ async function sendMessage(req, res) {
   try {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
-    const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, nonce = null } = req.body;
+    const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, nonce = null, photoUrl, photoKey, photoNonce = null } = req.body;
 
-    const effectiveNonce = messageType === 'voice' ? voiceNonce : nonce;
-    console.log(`[chat][E2E DEBUG] sendMessage from ${userId} → type=${messageType}, nonce=${effectiveNonce ? '✅ ЕСТЬ (зашифровано)' : '❌ НЕТ (открытый текст)'}, text_preview="${text ? text.substring(0, 30) : ''}..."`);
+    if (messageType === 'image') {
+      console.log(`[chat][E2E DEBUG] image body: photoUrl=${!!photoUrl}, photoKey=${!!photoKey}, photoNonce=${photoNonce ? photoNonce.slice(0,10) + '...' : 'null'}`);
+    }
+    const effectiveNonce = messageType === 'voice' ? voiceNonce : messageType === 'image' ? photoNonce : nonce;
+    console.log(`[chat][E2E DEBUG] sendMessage from ${userId} → type=${messageType}, encrypted=${effectiveNonce ? '✅ ДА' : '❌ НЕТ'}`);
 
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -256,6 +264,10 @@ async function sendMessage(req, res) {
     } else if (messageType === 'voice') {
       if (!voiceUrl) {
         return res.status(400).json({ message: 'Voice URL is required' });
+      }
+    } else if (messageType === 'image') {
+      if (!photoUrl) {
+        return res.status(400).json({ message: 'Photo URL is required' });
       }
     }
 
@@ -281,11 +293,13 @@ async function sendMessage(req, res) {
     // Текст для push-уведомления (сервер не может расшифровать E2E)
     const pushText = messageType === 'voice'
       ? '🎤 Голосовое сообщение'
-      : (nonce ? 'Новое сообщение' : messageText);
+      : messageType === 'image'
+        ? '📷 Фото'
+        : (nonce ? 'Новое сообщение' : messageText);
 
     // Данные для lastMessage: для E2E храним шифртекст + nonce, чтобы клиент мог расшифровать
     const lastMessageData = {
-      text: messageType === 'voice' ? '🎤 Голосовое сообщение' : messageText,
+      text: messageType === 'voice' ? '🎤 Голосовое сообщение' : messageType === 'image' ? '📷 Фото' : messageText,
       nonce: messageType === 'text' ? (nonce || null) : null,
       senderId: userObjectId,
       createdAt: new Date(),
@@ -316,9 +330,16 @@ async function sendMessage(req, res) {
     // Добавляем данные голосового сообщения
     if (messageType === 'voice') {
       messageData.voiceUrl = voiceUrl;
-      messageData.voiceKey = voiceKey || null; // S3 ключ для регенерации presigned URL
+      messageData.voiceKey = voiceKey || null;
       messageData.voiceDuration = voiceDuration || 0;
-      messageData.voiceNonce = voiceNonce || null; // E2E nonce (если зашифровано)
+      messageData.voiceNonce = voiceNonce || null;
+    }
+
+    // Добавляем данные фото
+    if (messageType === 'image') {
+      messageData.photoUrl = photoUrl;
+      messageData.photoKey = photoKey || null;
+      messageData.photoNonce = photoNonce || null;
     }
 
     const message = await Message.create(messageData);
@@ -345,6 +366,9 @@ async function sendMessage(req, res) {
       voiceUrl: message.voiceUrl || null,
       voiceDuration: message.voiceDuration || null,
       voiceNonce: message.voiceNonce || null,
+      photoUrl: message.photoUrl || null,
+      photoKey: message.photoKey || null,
+      photoNonce: message.photoNonce || null,
       replyTo: message.replyTo || null,
       isRead: message.isRead,
       createdAt: message.createdAt,
@@ -471,6 +495,13 @@ async function startConversation(req, res) {
         participants: [userObjectId, recipientObjectId],
       });
       console.log(`[chat] Created new conversation ${conversation._id}`);
+    } else if (conversation.deletedFor?.some(id => id.toString() === userId.toString())) {
+      // Пользователь ранее удалил чат (переустановка) — восстанавливаем доступ
+      await Conversation.updateOne(
+        { _id: conversation._id },
+        { $pull: { deletedFor: userObjectId } }
+      );
+      console.log(`[chat] Restored conversation ${conversation._id} for user ${userId}`);
     }
 
     // Получаем данные собеседника
@@ -542,6 +573,19 @@ async function deleteConversations(req, res) {
       return res.status(404).json({ message: 'No valid conversations found' });
     }
 
+    // Собираем других участников перед удалением для уведомления через сокет
+    const conversationsToDelete = await Conversation.find({
+      _id: { $in: validConversationIds },
+    }).select('participants').lean();
+
+    const notifyMap = {}; // conversationId → [otherUserId, ...]
+    conversationsToDelete.forEach(conv => {
+      const others = conv.participants
+        .map(p => p.toString())
+        .filter(p => p !== userId.toString());
+      notifyMap[conv._id.toString()] = others;
+    });
+
     // Удаляем сообщения из этих чатов
     await Message.deleteMany({
       conversationId: { $in: validConversationIds },
@@ -550,6 +594,14 @@ async function deleteConversations(req, res) {
     // Удаляем сами чаты
     await Conversation.deleteMany({
       _id: { $in: validConversationIds },
+    });
+
+    // Уведомляем других участников через Socket.IO
+    Object.entries(notifyMap).forEach(([convId, otherIds]) => {
+      otherIds.forEach(otherId => {
+        emitToUser(otherId, 'conversation_deleted', { conversationId: convId });
+        console.log(`[chat] Emitted conversation_deleted to user ${otherId} for conv ${convId}`);
+      });
     });
 
     console.log(`[chat] Deleted ${validConversationIds.length} conversations for user ${userId}`);
@@ -589,6 +641,37 @@ async function uploadVoice(req, res) {
     });
   } catch (e) {
     console.error('[chat] uploadVoice error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * POST /chats/upload-photo - Загрузить фото для чата
+ */
+async function uploadPhoto(req, res) {
+  try {
+    const userId = getReqUserId(req);
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'No photo file uploaded' });
+    }
+
+    const photoKey = req.file.key;
+    const photoUrl = await getPhotoUrl(photoKey);
+
+    console.log(`[chat] Photo uploaded by user ${userId}: ${photoKey}`);
+
+    return res.json({
+      success: true,
+      photoKey,
+      photoUrl,
+    });
+  } catch (e) {
+    console.error('[chat] uploadPhoto error:', e);
     return res.status(500).json({ message: 'Server error' });
   }
 }
@@ -849,11 +932,15 @@ async function deleteAllChats(req, res) {
     const convIds = conversations.map(c => c._id);
 
     if (convIds.length > 0) {
-      await Message.deleteMany({ conversationId: { $in: convIds } });
-      await Conversation.deleteMany({ _id: { $in: convIds } });
+      // Soft-delete: помечаем чаты как удалённые только для этого пользователя
+      // Другие участники сохраняют доступ к переписке
+      await Conversation.updateMany(
+        { _id: { $in: convIds } },
+        { $addToSet: { deletedFor: userObjectId } }
+      );
     }
 
-    console.log(`[chat] Deleted all ${convIds.length} conversations for user ${userId} (new E2E keys)`);
+    console.log(`[chat] Soft-deleted ${convIds.length} conversations for user ${userId} (new E2E keys)`);
     return res.json({ success: true, deletedCount: convIds.length });
   } catch (e) {
     console.error('[chat] deleteAllChats error:', e);
@@ -954,6 +1041,7 @@ module.exports = {
   startConversation,
   deleteConversations,
   uploadVoice,
+  uploadPhoto,
   registerPushToken,
   unregisterPushToken,
   debugPush,
