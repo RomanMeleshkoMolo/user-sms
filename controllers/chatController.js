@@ -125,6 +125,7 @@ async function getConversations(req, res) {
 
         return {
           _id: conv._id,
+          isPrivate: conv.isPrivate || false,
           otherUser: otherUser ? {
             _id: otherUser._id,
             name: otherUser.name,
@@ -160,6 +161,8 @@ async function getMessages(req, res) {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 30));
     const skip = (page - 1) * limit;
+    // Различаем обычный и приватный чат — у одних участников может быть оба типа
+    const isPrivate = req.query.private === 'true';
 
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -172,9 +175,10 @@ async function getMessages(req, res) {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
 
-    // Ищем или создаём беседу
+    // Ищем беседу с учётом типа (приватная / обычная)
     let conversation = await Conversation.findOne({
       participants: { $all: [userObjectId, recipientObjectId] },
+      isPrivate,
     });
 
     if (!conversation) {
@@ -472,6 +476,7 @@ async function startConversation(req, res) {
   try {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
+    const isPrivate = req.query.private === 'true';
 
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -484,17 +489,21 @@ async function startConversation(req, res) {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
 
-    // Ищем существующую беседу
+    // Ищем существующую беседу (с учётом типа — приватная или обычная)
     let conversation = await Conversation.findOne({
       participants: { $all: [userObjectId, recipientObjectId] },
+      isPrivate,
     });
+
+    const isNewConversation = !conversation;
 
     // Если нет - создаём пустую
     if (!conversation) {
       conversation = await Conversation.create({
         participants: [userObjectId, recipientObjectId],
+        isPrivate,
       });
-      console.log(`[chat] Created new conversation ${conversation._id}`);
+      console.log(`[chat] Created new ${isPrivate ? 'private' : 'regular'} conversation ${conversation._id}`);
     } else if (conversation.deletedFor?.some(id => id.toString() === userId.toString())) {
       // Пользователь ранее удалил чат (переустановка) — восстанавливаем доступ
       await Conversation.updateOne(
@@ -518,8 +527,18 @@ async function startConversation(req, res) {
       photoUrl = await getPhotoUrl(photoKey);
     }
 
+    // При создании нового приватного чата — уведомляем собеседника мгновенно через socket
+    if (isNewConversation && isPrivate) {
+      emitToUser(String(recipientId), 'private_chat_created', {
+        conversationId: conversation._id,
+        initiatorId: String(userId),
+      });
+      console.log(`[chat] Emitted private_chat_created to user ${recipientId}`);
+    }
+
     return res.json({
       conversationId: conversation._id,
+      isPrivate: conversation.isPrivate || false,
       otherUser: otherUser ? {
         _id: otherUser._id,
         name: otherUser.name,
@@ -1033,6 +1052,55 @@ async function deleteMessage(req, res) {
   }
 }
 
+/**
+ * DELETE /chats/private/all
+ * Вызывается когда пользователь переустановил приложение и сгенерировал новые E2E ключи.
+ * Удаляет все приватные чаты пользователя и уведомляет собеседников через socket.
+ */
+async function deletePrivateConversations(req, res) {
+  try {
+    const userId = getReqUserId(req);
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // Находим все приватные чаты пользователя
+    const privateConvs = await Conversation.find({
+      participants: userObjectId,
+      isPrivate: true,
+    }).lean();
+
+    if (privateConvs.length === 0) {
+      return res.json({ success: true, deletedCount: 0 });
+    }
+
+    const convIds = privateConvs.map(c => c._id);
+
+    // Жёстко удаляем приватные чаты и их сообщения
+    await Message.deleteMany({ conversationId: { $in: convIds } });
+    await Conversation.deleteMany({ _id: { $in: convIds } });
+
+    // Уведомляем собеседников через socket
+    privateConvs.forEach(conv => {
+      const otherId = conv.participants.find(p => p.toString() !== userId.toString());
+      if (otherId) {
+        emitToUser(otherId.toString(), 'private_chat_deleted', {
+          conversationId: conv._id.toString(),
+        });
+      }
+    });
+
+    console.log(`[chat] Deleted ${privateConvs.length} private conversations for user ${userId}`);
+    return res.json({ success: true, deletedCount: privateConvs.length });
+  } catch (e) {
+    console.error('[chat] deletePrivateConversations error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
 module.exports = {
   getConversations,
   getMessages,
@@ -1040,6 +1108,7 @@ module.exports = {
   markAsRead,
   startConversation,
   deleteConversations,
+  deletePrivateConversations,
   uploadVoice,
   uploadPhoto,
   registerPushToken,

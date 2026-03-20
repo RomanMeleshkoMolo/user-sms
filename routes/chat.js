@@ -13,6 +13,7 @@ const {
   markAsRead,
   startConversation,
   deleteConversations,
+  deletePrivateConversations,
   uploadVoice,
   uploadPhoto,
   registerPushToken,
@@ -132,6 +133,9 @@ router.get('/chats/keys/:userId', authRequired, getPublicKey);
 // DELETE /chats/all - Удалить все чаты пользователя (переустановка с новыми E2E ключами)
 // ВАЖНО: должен быть ПЕРЕД /chats иначе Express может не матчить 'all'
 router.delete('/chats/all', authRequired, deleteAllChats);
+
+// DELETE /chats/private/all - Удалить все приватные чаты при сбросе E2E ключей
+router.delete('/chats/private/all', authRequired, deletePrivateConversations);
 
 // GET /chats/debug/push/:userId - Проверить токены и отправить тестовый push (без авторизации, только для отладки)
 router.get('/chats/debug/push/:userId', debugPush);
