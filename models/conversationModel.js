@@ -24,6 +24,9 @@ const conversationSchema = new mongoose.Schema({
     default: {},
   },
 
+  // Приватный чат (E2E шифрование, не модерируется)
+  isPrivate: { type: Boolean, default: false },
+
   // Пользователи, для которых чат "удалён" (soft-delete при переустановке)
   deletedFor: [{
     type: mongoose.Schema.Types.ObjectId,
