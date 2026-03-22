@@ -244,7 +244,7 @@ async function sendMessage(req, res) {
   try {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
-    const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, nonce = null, photoUrl, photoKey, photoNonce = null } = req.body;
+    const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, nonce = null, photoUrl, photoKey, photoNonce = null, isPrivate = false } = req.body;
 
     if (messageType === 'image') {
       console.log(`[chat][E2E DEBUG] image body: photoUrl=${!!photoUrl}, photoKey=${!!photoKey}, photoNonce=${photoNonce ? photoNonce.slice(0,10) + '...' : 'null'}`);
@@ -289,9 +289,10 @@ async function sendMessage(req, res) {
       };
     }
 
-    // Ищем или создаём беседу
+    // Ищем беседу с учётом типа (приватная / обычная)
     let conversation = await Conversation.findOne({
       participants: { $all: [userObjectId, recipientObjectId] },
+      isPrivate: isPrivate === true || isPrivate === 'true',
     });
 
     // Текст для push-уведомления (сервер не может расшифровать E2E)
@@ -311,13 +312,14 @@ async function sendMessage(req, res) {
     };
 
     if (!conversation) {
-      // Создаём новую беседу
+      // Беседа не найдена — создаём с нужным типом
       conversation = await Conversation.create({
         participants: [userObjectId, recipientObjectId],
+        isPrivate: isPrivate === true || isPrivate === 'true',
         lastMessage: lastMessageData,
         unreadCount: new Map(),
       });
-      console.log(`[chat] Created new conversation ${conversation._id}`);
+      console.log(`[chat] Created new ${isPrivate ? 'private' : 'regular'} conversation ${conversation._id}`);
     }
 
     // Создаём сообщение
