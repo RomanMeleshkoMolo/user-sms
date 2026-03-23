@@ -1,7 +1,36 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
+const User = require('../models/userModel');
+const Conversation = require('../models/conversationModel');
 
 let io = null;
+
+/**
+ * Находит всех собеседников пользователя и рассылает им статус
+ */
+async function broadcastUserStatus(userId, isOnline, lastSeen) {
+  try {
+    const conversations = await Conversation.find({
+      participants: userId,
+    }).select('participants').lean();
+
+    const recipientIds = new Set();
+    conversations.forEach((conv) => {
+      conv.participants.forEach((p) => {
+        if (String(p) !== String(userId)) {
+          recipientIds.add(String(p));
+        }
+      });
+    });
+
+    const payload = { userId: String(userId), isOnline, lastSeen };
+    recipientIds.forEach((recipientId) => {
+      io.to(`user:${recipientId}`).emit('user_status', payload);
+    });
+  } catch (e) {
+    console.error('[socket-chat] broadcastUserStatus error:', e.message);
+  }
+}
 
 function initSocketIO(httpServer) {
   io = new Server(httpServer, {
@@ -26,10 +55,20 @@ function initSocketIO(httpServer) {
     }
   });
 
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     console.log(`[socket-chat] User connected: ${socket.userId}`);
-    // Join personal room
     socket.join(`user:${socket.userId}`);
+
+    // Обновляем статус онлайн
+    try {
+      await User.findByIdAndUpdate(socket.userId, {
+        isOnline: true,
+        lastSeen: new Date(),
+      });
+      broadcastUserStatus(socket.userId, true, null);
+    } catch (e) {
+      console.error('[socket-chat] set online error:', e.message);
+    }
 
     // Typing indicator
     socket.on('typing_start', ({ recipientId }) => {
@@ -48,8 +87,18 @@ function initSocketIO(httpServer) {
       });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       console.log(`[socket-chat] User disconnected: ${socket.userId}`);
+      const lastSeen = new Date();
+      try {
+        await User.findByIdAndUpdate(socket.userId, {
+          isOnline: false,
+          lastSeen,
+        });
+        broadcastUserStatus(socket.userId, false, lastSeen);
+      } catch (e) {
+        console.error('[socket-chat] set offline error:', e.message);
+      }
     });
   });
 

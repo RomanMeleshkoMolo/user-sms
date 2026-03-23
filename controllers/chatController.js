@@ -103,16 +103,10 @@ async function getConversations(req, res) {
           // Получаем presigned URL для фото
           if (otherUser?.userPhoto?.[0]) {
             const rawPhoto = otherUser.userPhoto[0];
-            const photoKey = typeof rawPhoto === 'object'
-              ? rawPhoto.key
-              : rawPhoto;
-            console.log('[chat] getConversations photo debug:', {
-              userId: otherParticipantId,
-              rawPhoto: JSON.stringify(rawPhoto),
-              photoKey,
-            });
-            photoUrl = await getPhotoUrl(photoKey);
-            console.log('[chat] getConversations photoUrl:', photoUrl ? 'OK' : 'NULL');
+            const photoKey = typeof rawPhoto === 'object' ? rawPhoto.key : rawPhoto;
+            const directUrl = typeof rawPhoto === 'object' ? rawPhoto.url : null;
+            // Если key есть — генерируем presigned S3 URL, иначе используем прямой URL
+            photoUrl = photoKey ? await getPhotoUrl(photoKey) : (directUrl || null);
           } else {
             console.log('[chat] getConversations: no userPhoto for user', otherParticipantId,
               'userPhoto array:', JSON.stringify(otherUser?.userPhoto));
@@ -142,9 +136,12 @@ async function getConversations(req, res) {
       })
     );
 
-    console.log(`[chat] getConversations for user ${userId}: found ${enrichedConversations.length}`);
+    // Filter out conversations where the other user has been deleted
+    const validConversations = enrichedConversations.filter(c => c.otherUser !== null);
 
-    return res.json({ conversations: enrichedConversations });
+    console.log(`[chat] getConversations for user ${userId}: found ${validConversations.length} (${enrichedConversations.length - validConversations.length} filtered - deleted users)`);
+
+    return res.json({ conversations: validConversations });
   } catch (e) {
     console.error('[chat] getConversations error:', e);
     return res.status(500).json({ message: 'Server error' });
@@ -523,10 +520,10 @@ async function startConversation(req, res) {
     // Получаем presigned URL для фото
     let photoUrl = null;
     if (otherUser?.userPhoto?.[0]) {
-      const photoKey = typeof otherUser.userPhoto[0] === 'object'
-        ? otherUser.userPhoto[0].key
-        : otherUser.userPhoto[0];
-      photoUrl = await getPhotoUrl(photoKey);
+      const rawPhoto = otherUser.userPhoto[0];
+      const photoKey = typeof rawPhoto === 'object' ? rawPhoto.key : rawPhoto;
+      const directUrl = typeof rawPhoto === 'object' ? rawPhoto.url : null;
+      photoUrl = photoKey ? await getPhotoUrl(photoKey) : (directUrl || null);
     }
 
     // При создании нового приватного чата — уведомляем собеседника мгновенно через socket
