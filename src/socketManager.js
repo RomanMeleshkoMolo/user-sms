@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
 const Conversation = require('../models/conversationModel');
+const { sendCallNotification } = require('../services/pushNotificationService');
 
 let io = null;
 
@@ -69,6 +70,63 @@ function initSocketIO(httpServer) {
     } catch (e) {
       console.error('[socket-chat] set online error:', e.message);
     }
+
+    // ── WebRTC video call signaling ──────────────────────────────────
+
+    socket.on('call:offer', async ({ to, offer, callerName, callerPhoto }) => {
+      if (!to) return;
+
+      io.to(`user:${String(to)}`).emit('call:incoming', {
+        from: socket.userId,
+        offer,
+        callerName,
+        callerPhoto,
+      });
+
+      // FCM push — если получатель не онлайн или приложение свёрнуто
+      try {
+        await sendCallNotification(
+          to,
+          { name: callerName, photo: callerPhoto },
+          socket.userId
+        );
+      } catch (e) {
+        console.error('[socket-chat] sendCallNotification error:', e.message);
+      }
+    });
+
+    socket.on('call:answer', ({ to, answer }) => {
+      if (!to) return;
+      io.to(`user:${String(to)}`).emit('call:answered', {
+        from: socket.userId,
+        answer,
+      });
+    });
+
+    socket.on('call:ice-candidate', ({ to, candidate }) => {
+      if (!to) return;
+      io.to(`user:${String(to)}`).emit('call:ice-candidate', {
+        from: socket.userId,
+        candidate,
+      });
+    });
+
+    socket.on('call:end', ({ to }) => {
+      if (!to) return;
+      io.to(`user:${String(to)}`).emit('call:ended', { from: socket.userId });
+    });
+
+    socket.on('call:reject', ({ to }) => {
+      if (!to) return;
+      io.to(`user:${String(to)}`).emit('call:rejected', { from: socket.userId });
+    });
+
+    socket.on('call:camera_toggle', ({ to, isOn }) => {
+      if (!to) return;
+      io.to(`user:${String(to)}`).emit('call:camera_toggled', { from: socket.userId, isOn });
+    });
+
+    // ────────────────────────────────────────────────────────────────
 
     // Typing indicator
     socket.on('typing_start', ({ recipientId }) => {

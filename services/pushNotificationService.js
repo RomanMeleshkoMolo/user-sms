@@ -215,9 +215,31 @@ async function unregisterDeviceToken(fcmToken) {
   }
 }
 
+/**
+ * Отправить push-уведомление о входящем видеозвонке
+ * @param {string} recipientId - ID получателя
+ * @param {object} caller - Данные звонящего { name, photo }
+ * @param {string} callerId - ID звонящего
+ */
+async function sendCallNotification(recipientId, caller, callerId) {
+  const notification = {
+    title: caller.name || 'Входящий звонок',
+    body: '📹 Видеозвонок',
+    data: {
+      type: 'incoming_call',
+      callerId: callerId?.toString() || '',
+      callerName: caller.name || '',
+      callerPhoto: caller.photo || '',
+    },
+  };
+
+  return sendPushToUser(recipientId, notification);
+}
+
 module.exports = {
   sendPushToUser,
   sendNewMessageNotification,
+  sendCallNotification,
   registerDeviceToken,
   unregisterDeviceToken,
 };
