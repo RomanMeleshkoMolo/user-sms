@@ -1037,8 +1037,13 @@ async function deleteMessage(req, res) {
         .sort({ createdAt: -1 })
         .lean();
 
+      const lastText = newLast
+        ? (newLast.messageType === 'voice' ? '🎤 Голосовое сообщение'
+          : newLast.messageType === 'image' ? '📷 Фото'
+          : (newLast.text || ''))
+        : '';
       conversation.lastMessage = newLast
-        ? { text: newLast.text || '', nonce: newLast.nonce || null, senderId: newLast.senderId, createdAt: newLast.createdAt }
+        ? { text: lastText, nonce: newLast.messageType === 'text' ? (newLast.nonce || null) : null, senderId: newLast.senderId, createdAt: newLast.createdAt }
         : { text: '', nonce: null, senderId: null, createdAt: conversation.createdAt };
 
       await conversation.save();
