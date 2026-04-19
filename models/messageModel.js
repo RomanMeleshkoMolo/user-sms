@@ -61,6 +61,12 @@ const messageSchema = new mongoose.Schema({
     default: null,
   },
 
+  // Волновая форма голосового сообщения — массив амплитуд [0..1]
+  voiceWaveform: {
+    type: [Number],
+    default: null,
+  },
+
   // URL фото (presigned S3)
   photoUrl: {
     type: String,
