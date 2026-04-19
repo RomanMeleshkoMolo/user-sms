@@ -241,7 +241,7 @@ async function sendMessage(req, res) {
   try {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
-    const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, nonce = null, photoUrl, photoKey, photoNonce = null, isPrivate = false } = req.body;
+    const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, voiceWaveform = null, nonce = null, photoUrl, photoKey, photoNonce = null, isPrivate = false } = req.body;
 
     if (messageType === 'image') {
       console.log(`[chat][E2E DEBUG] image body: photoUrl=${!!photoUrl}, photoKey=${!!photoKey}, photoNonce=${photoNonce ? photoNonce.slice(0,10) + '...' : 'null'}`);
@@ -336,6 +336,7 @@ async function sendMessage(req, res) {
       messageData.voiceKey = voiceKey || null;
       messageData.voiceDuration = voiceDuration || 0;
       messageData.voiceNonce = voiceNonce || null;
+      messageData.voiceWaveform = Array.isArray(voiceWaveform) ? voiceWaveform : null;
     }
 
     // Добавляем данные фото
@@ -369,6 +370,7 @@ async function sendMessage(req, res) {
       voiceUrl: message.voiceUrl || null,
       voiceDuration: message.voiceDuration || null,
       voiceNonce: message.voiceNonce || null,
+      voiceWaveform: message.voiceWaveform || null,
       photoUrl: message.photoUrl || null,
       photoKey: message.photoKey || null,
       photoNonce: message.photoNonce || null,
