@@ -3,11 +3,11 @@ const Conversation = require('../models/conversationModel');
 const Message = require('../models/messageModel');
 const User = require('../models/userModel');
 const {
-  sendNewMessageNotification,
   sendPushToUser,
   registerDeviceToken,
   unregisterDeviceToken,
 } = require('../services/pushNotificationService');
+const { publishNotification } = require('../src/notificationPublisher');
 const DeviceToken = require('../models/deviceTokenModel');
 const { emitToUser } = require('../src/socketManager');
 
@@ -384,19 +384,23 @@ async function sendMessage(req, res) {
       senderId: String(userId),
     });
 
-    // Push-уведомление — полностью вынесено из critical path
-    // User.findById перенесён внутрь, ответ клиенту уже отправлен
+    // Push-уведомление — через RabbitMQ (retry при ошибке FCM)
     ;(async () => {
       try {
         const sender = await User.findById(userObjectId).select('name').lean();
-        await sendNewMessageNotification(
-          recipientId,
-          { _id: userObjectId, name: sender?.name },
-          pushText,
-          conversation._id
-        );
+        await publishNotification({
+          userId: String(recipientId),
+          title: sender?.name || 'Пользователь',
+          body: pushText || 'Новое сообщение',
+          data: {
+            type: 'new_message',
+            conversationId: conversation._id?.toString() || '',
+            senderId: String(userId),
+            senderName: sender?.name || '',
+          },
+        });
       } catch (err) {
-        console.error('[chat] Push notification error:', err.message);
+        console.error('[chat] Notification publish error:', err.message);
       }
     })();
 
