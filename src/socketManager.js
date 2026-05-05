@@ -1,10 +1,27 @@
 const { Server } = require('socket.io');
+const { createAdapter } = require('@socket.io/redis-adapter');
+const { createClient } = require('ioredis');
 const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
 const Conversation = require('../models/conversationModel');
 const { sendCallNotification } = require('../services/pushNotificationService');
 
 let io = null;
+
+function createRedisAdapter() {
+  const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
+  const REDIS_PORT = Number(process.env.REDIS_PORT) || 6379;
+  const REDIS_PASSWORD = process.env.REDIS_PASSWORD || undefined;
+
+  // pub/sub требуют два отдельных подключения к Redis
+  const pubClient = createClient({ host: REDIS_HOST, port: REDIS_PORT, password: REDIS_PASSWORD });
+  const subClient = pubClient.duplicate();
+
+  pubClient.on('error', (e) => console.error('[Redis-socket-chat] pub error:', e.message));
+  subClient.on('error', (e) => console.error('[Redis-socket-chat] sub error:', e.message));
+
+  return createAdapter(pubClient, subClient);
+}
 
 /**
  * Находит всех собеседников пользователя и рассылает им статус
@@ -37,7 +54,11 @@ function initSocketIO(httpServer) {
   io = new Server(httpServer, {
     cors: { origin: '*' },
     transports: ['websocket', 'polling'],
+    path: '/socket/chat',
   });
+
+  io.adapter(createRedisAdapter());
+  console.log('[socket-chat] Redis adapter connected');
 
   // JWT auth middleware
   io.use((socket, next) => {

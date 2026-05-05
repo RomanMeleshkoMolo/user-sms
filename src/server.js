@@ -18,6 +18,11 @@ process.on('unhandledRejection', (reason) => {
 // Connect database
 require('./db');
 
+// Connect RabbitMQ and start notification worker
+const { connect: connectRabbitMQ } = require('./rabbitmq');
+const { startNotificationWorker } = require('./notificationWorker');
+connectRabbitMQ().then(() => startNotificationWorker());
+
 // Connect routers
 const chatRoutes = require('../routes/chat');
 
@@ -26,6 +31,9 @@ const { initSocketIO } = require('./socketManager');
 
 const app = express();
 const PORT = process.env.PORT || 6000;
+
+// Trust Nginx proxy so express-rate-limit can read real client IP from X-Forwarded-For
+app.set('trust proxy', 1);
 
 app.use(cors({ origin: '*' }));
 app.use(bodyParser.json());
