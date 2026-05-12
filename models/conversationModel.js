@@ -1,4 +1,5 @@
-const mongoose = require('../src/db');
+const mongoose = require('mongoose');
+const { chatConn } = require('../src/db');
 
 const conversationSchema = new mongoose.Schema({
   // Участники чата (2 пользователя)
@@ -43,6 +44,6 @@ conversationSchema.index({ participants: 1, updatedAt: -1 });
 // Уникальная пара участников — запрет дублирующих чатов между одними юзерами
 conversationSchema.index({ participants: 1 }, { unique: false });
 
-const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', conversationSchema);
+const Conversation = chatConn.models.Conversation || chatConn.model('Conversation', conversationSchema);
 
 module.exports = Conversation;

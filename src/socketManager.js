@@ -8,6 +8,17 @@ const { sendCallNotification } = require('../services/pushNotificationService');
 
 let io = null;
 
+// Хранилище активных офферов звонков (recipientId → offer)
+// Если получатель переподключается пока звонок активен — оффер переотправляется
+const CALL_OFFER_TTL_MS = 45_000;
+const pendingCallOffers = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, data] of pendingCallOffers) {
+    if (now - data.timestamp > CALL_OFFER_TTL_MS) pendingCallOffers.delete(id);
+  }
+}, 15_000);
+
 function createRedisAdapter() {
   const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
   const REDIS_PORT = Number(process.env.REDIS_PORT) || 6379;
@@ -92,10 +103,30 @@ function initSocketIO(httpServer) {
       console.error('[socket-chat] set online error:', e.message);
     }
 
+    // Если для этого юзера есть активный оффер (он открыл приложение по пушу) — переотправляем
+    const pendingCall = pendingCallOffers.get(socket.userId);
+    if (pendingCall && Date.now() - pendingCall.timestamp < CALL_OFFER_TTL_MS) {
+      socket.emit('call:incoming', {
+        from: pendingCall.callerId,
+        offer: pendingCall.offer,
+        callerName: pendingCall.callerName,
+        callerPhoto: pendingCall.callerPhoto,
+      });
+    }
+
     // ── WebRTC video call signaling ──────────────────────────────────
 
     socket.on('call:offer', async ({ to, offer, callerName, callerPhoto }) => {
       if (!to) return;
+
+      // Сохраняем оффер — получатель может переподключиться после пуша
+      pendingCallOffers.set(String(to), {
+        callerId: socket.userId,
+        offer,
+        callerName,
+        callerPhoto,
+        timestamp: Date.now(),
+      });
 
       io.to(`user:${String(to)}`).emit('call:incoming', {
         from: socket.userId,
@@ -118,6 +149,8 @@ function initSocketIO(httpServer) {
 
     socket.on('call:answer', ({ to, answer }) => {
       if (!to) return;
+      // Оффер принят — удаляем из хранилища
+      pendingCallOffers.delete(socket.userId);
       io.to(`user:${String(to)}`).emit('call:answered', {
         from: socket.userId,
         answer,
@@ -134,11 +167,15 @@ function initSocketIO(httpServer) {
 
     socket.on('call:end', ({ to }) => {
       if (!to) return;
+      // Звонок завершён — удаляем оффер для получателя
+      pendingCallOffers.delete(String(to));
       io.to(`user:${String(to)}`).emit('call:ended', { from: socket.userId });
     });
 
     socket.on('call:reject', ({ to }) => {
       if (!to) return;
+      // Получатель отклонил — удаляем его оффер
+      pendingCallOffers.delete(socket.userId);
       io.to(`user:${String(to)}`).emit('call:rejected', { from: socket.userId });
     });
 
