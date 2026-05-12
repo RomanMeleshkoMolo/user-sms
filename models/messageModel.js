@@ -1,4 +1,5 @@
-const mongoose = require('../src/db');
+const mongoose = require('mongoose');
+const { chatConn } = require('../src/db');
 
 const messageSchema = new mongoose.Schema({
   // ID беседы
@@ -143,6 +144,6 @@ messageSchema.index({ conversationId: 1, receiverId: 1, isRead: 1 });
 messageSchema.index({ senderId: 1 });
 messageSchema.index({ receiverId: 1 });
 
-const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
+const Message = chatConn.models.Message || chatConn.model('Message', messageSchema);
 
 module.exports = Message;

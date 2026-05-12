@@ -216,24 +216,93 @@ async function unregisterDeviceToken(fcmToken) {
 }
 
 /**
- * Отправить push-уведомление о входящем видеозвонке
- * @param {string} recipientId - ID получателя
- * @param {object} caller - Данные звонящего { name, photo }
- * @param {string} callerId - ID звонящего
+ * Отправить push-уведомление о входящем видеозвонке.
+ * Использует отдельный высокоприоритетный payload — максимальный шанс
+ * разбудить приложение на iOS (content-available) и Android (priority max).
  */
 async function sendCallNotification(recipientId, caller, callerId) {
-  const notification = {
-    title: caller.name || 'Входящий звонок',
-    body: '📹 Видеозвонок',
-    data: {
-      type: 'incoming_call',
-      callerId: callerId?.toString() || '',
-      callerName: caller.name || '',
-      callerPhoto: caller.photo || '',
-    },
-  };
+  if (!firebaseInitialized) {
+    console.log('[FCM] Firebase not initialized, skipping call notification');
+    return { success: false, reason: 'firebase_not_initialized' };
+  }
 
-  return sendPushToUser(recipientId, notification);
+  try {
+    const tokens = await DeviceToken.find({ userId: recipientId, isActive: true }).lean();
+    if (!tokens.length) {
+      console.log(`[FCM] No active tokens for user ${recipientId}`);
+      return { success: false, reason: 'no_tokens' };
+    }
+
+    const fcmTokens = tokens.map((t) => t.fcmToken);
+    const title = caller.name || 'Входящий звонок';
+
+    const message = {
+      notification: {
+        title,
+        body: '📹 Видеозвонок',
+      },
+      data: {
+        type: 'incoming_call',
+        callerId: callerId?.toString() || '',
+        callerName: caller.name || '',
+        callerPhoto: caller.photo || '',
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'molo_calls',
+          priority: 'max',
+          defaultSound: true,
+          defaultVibrateTimings: true,
+          visibility: 'PUBLIC',
+        },
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': 'alert',
+        },
+        payload: {
+          aps: {
+            alert: { title, body: '📹 Видеозвонок' },
+            sound: 'default',
+            badge: 1,
+            'content-available': 1,
+          },
+        },
+      },
+    };
+
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens: fcmTokens,
+      ...message,
+    });
+
+    console.log(`[FCM] Call notification to user ${recipientId}: ${response.successCount}/${fcmTokens.length} ok`);
+
+    if (response.failureCount > 0) {
+      const invalid = [];
+      response.responses.forEach((r, idx) => {
+        if (!r.success) {
+          const code = r.error?.code;
+          if (
+            code === 'messaging/invalid-registration-token' ||
+            code === 'messaging/registration-token-not-registered'
+          ) {
+            invalid.push(fcmTokens[idx]);
+          }
+        }
+      });
+      if (invalid.length) {
+        await DeviceToken.updateMany({ fcmToken: { $in: invalid } }, { isActive: false });
+      }
+    }
+
+    return { success: true, successCount: response.successCount };
+  } catch (error) {
+    console.error('[FCM] Error sending call notification:', error);
+    return { success: false, reason: 'error', error: error.message };
+  }
 }
 
 module.exports = {

@@ -1,4 +1,5 @@
-const mongoose = require('../src/db');
+const mongoose = require('mongoose');
+const { authConn } = require('../src/db');
 
 /**
  * DeviceToken - Модель для хранения FCM токенов устройств
@@ -56,6 +57,6 @@ deviceTokenSchema.index({ userId: 1, isActive: 1 });
 // Уникальный индекс для токена
 deviceTokenSchema.index({ fcmToken: 1 }, { unique: true });
 
-const DeviceToken = mongoose.models.DeviceToken || mongoose.model('DeviceToken', deviceTokenSchema);
+const DeviceToken = authConn.models.DeviceToken || authConn.model('DeviceToken', deviceTokenSchema);
 
 module.exports = DeviceToken;
