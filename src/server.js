@@ -18,10 +18,9 @@ process.on('unhandledRejection', (reason) => {
 // Connect database
 require('./db');
 
-// Connect RabbitMQ and start notification worker
+// Connect RabbitMQ for publishing (notification worker runs as separate process)
 const { connect: connectRabbitMQ } = require('./rabbitmq');
-const { startNotificationWorker } = require('./notificationWorker');
-connectRabbitMQ().then(() => startNotificationWorker());
+connectRabbitMQ();
 
 // Connect routers
 const chatRoutes = require('../routes/chat');
@@ -57,6 +56,8 @@ const messageLimiter = rateLimit({
   skip: (req) => !req.headers['authorization'],
   message: { message: 'Message rate limit exceeded' },
 });
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use('/chats', limiter);
 app.use(/\/chats\/.*\/messages$/, messageLimiter);
