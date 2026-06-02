@@ -1,272 +1,290 @@
+'use strict';
 /**
- * Seed script: создаёт 50 тестовых чатов с ~50 случайными сообщениями в каждом.
+ * Seed чатов — использует реальных тестовых пользователей из molo_auth.
+ * Запускай ПОСЛЕ seedMasterTest.js (user-service/scripts/seedMasterTest.js).
  *
- * Использование:
- *   MY_USER_ID=<твой_userId> node scripts/seedTestChats.js
+ * Запуск:
+ *   MY_USER_ID=<твой_ObjectId> node scripts/seedTestChats.js
  *
- * Опционально:
- *   CHAT_COUNT=50      — кол-во чатов (по умолчанию 50)
- *   MSG_COUNT=50       — сообщений на чат (по умолчанию 50)
- *   MONGO_URI=...      — переопределить строку подключения
- *   CLEAN=true         — удалить ранее созданные seed-данные перед запуском
+ * Или через email:
+ *   TARGET_EMAIL=roman.meleshko1@gmail.com node scripts/seedTestChats.js
+ *
+ * Env:
+ *   AUTH_MONGO_URI   mongodb://localhost:27017/molo_auth
+ *   CHAT_MONGO_URI   mongodb://localhost:27017/molo_chat
+ *   MY_USER_ID       — ObjectId главного пользователя (опционально если TARGET_EMAIL)
+ *   TARGET_EMAIL     — email главного пользователя (опционально если MY_USER_ID)
+ *   CLEAN=true       — удалить старые seed-чаты перед запуском
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
-
 const mongoose = require('mongoose');
 
-// ---------- Конфиг ----------
-const MONGO_URI   = process.env.MONGO_URI || 'mongodb://localhost:27017/users';
-const MY_USER_ID  = process.env.MY_USER_ID;
-const CHAT_COUNT  = parseInt(process.env.CHAT_COUNT  || '50', 10);
-const MSG_COUNT   = parseInt(process.env.MSG_COUNT   || '50', 10);
-const CLEAN       = process.env.CLEAN === 'true';
+const AUTH_URI  = process.env.AUTH_MONGO_URI || 'mongodb://localhost:27017/molo_auth';
+const CHAT_URI  = process.env.MONGO_URI      || 'mongodb://localhost:27017/molo_chat';
+const TARGET_EMAIL = process.env.TARGET_EMAIL || 'roman.meleshko1@gmail.com';
+const MY_USER_ID   = process.env.MY_USER_ID;
+const CLEAN        = process.env.CLEAN === 'true';
 
-if (!MY_USER_ID) {
-  console.error('❌  Укажи MY_USER_ID=<твой ObjectId> перед запуском');
-  process.exit(1);
-}
-
-// ---------- Модели (inline, чтобы не тянуть src/db.js) ----------
-const connect = async () => mongoose.connect(MONGO_URI);
-
-const userSchema = new mongoose.Schema({
-  name: String,
-  age: Number,
-  userPhoto: { type: Array, default: [] },
-  isOnline: { type: Boolean, default: false },
-  lastSeen: { type: Date, default: null },
-  city: String,
-  userLocation: String,
-  publicKey: { type: String, default: null },
-  _isSeedUser: { type: Boolean, default: false }, // маркер seed-данных
-});
-const User = mongoose.models.User || mongoose.model('User', userSchema);
-
-const conversationSchema = new mongoose.Schema({
-  participants:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  lastMessage: {
-    text:      { type: String, default: '' },
-    nonce:     { type: String, default: null },
-    senderId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    createdAt: { type: Date, default: Date.now },
-    isRead:    { type: Boolean, default: false },
-  },
-  unreadCount: { type: Map, of: Number, default: {} },
-  isPrivate:   { type: Boolean, default: false },
-  deletedFor:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  createdAt:   { type: Date, default: Date.now },
-  updatedAt:   { type: Date, default: Date.now },
-  _isSeed:     { type: Boolean, default: false }, // маркер seed-данных
-});
-const Conversation = mongoose.models.Conversation || mongoose.model('Conversation', conversationSchema);
-
-const messageSchema = new mongoose.Schema({
-  conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', required: true },
-  senderId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  receiverId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  messageType:    { type: String, enum: ['text', 'voice', 'image'], default: 'text' },
-  text:           { type: String, trim: true, default: '' },
-  isRead:         { type: Boolean, default: false },
-  readAt:         { type: Date, default: null },
-  nonce:          { type: String, default: null },
-  heartedBy:      [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  deletedFor:     [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  deletedForAll:  { type: Boolean, default: false },
-  createdAt:      { type: Date, default: Date.now },
-  _isSeed:        { type: Boolean, default: false }, // маркер seed-данных
-});
-const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
-
-// ---------- Пул случайных русских фраз ----------
-const PHRASES = [
-  'Привет! Как дела?',
-  'Всё хорошо, спасибо 😊',
-  'Чем занимаешься?',
-  'Ничего особенного, отдыхаю',
-  'Слушай, давно хотел спросить...',
-  'Да? Что такое?',
-  'Ты сегодня свободен?',
-  'Нет, к сожалению 😕',
-  'Может встретимся на выходных?',
-  'Звучит отлично!',
-  'Как прошёл твой день?',
-  'Устал немного, но всё ок',
-  'Смотрел что-нибудь интересное?',
-  'Да, новый сезон очень крутой',
-  'Расскажи подробнее!',
-  'Там такой поворот в конце 😱',
-  'Не спойли мне! Я ещё не досмотрел',
-  'Ой, прости 😅',
-  'Ничего, прощаю 😄',
-  'Кстати, ты слышал новость?',
-  'Нет, что случилось?',
-  'Потом расскажу, сейчас бегу',
-  'Ладно, удачи!',
-  'Спасибо ❤️',
-  'Пока пока!',
-  'До завтра 👋',
-  'Окей, до связи',
-  'Не забудь написать',
-  'Конечно напишу',
-  'Жду!',
-  'Кстати, ты уже видел новое место в центре?',
-  'Нет, а что там?',
-  'Кафе открылось, говорят очень вкусно',
-  'Надо сходить как-нибудь',
-  'Давай в эту пятницу?',
-  'Договорились!',
-  'Отлично, буду ждать 🥳',
-  'Кстати, погода сегодня просто замечательная',
-  'Да, тепло наконец-то',
-  'Самое время для прогулки',
-  'Хочешь прогуляться сейчас?',
-  'Почему бы и нет, давай!',
-  'Встречаемся через час?',
-  'Ок, пиши когда выходишь',
-  'Уже выхожу!',
-  'Жду тебя у фонтана',
-  'Иду, минут 10',
-  'Не спеши, я подожду',
-  'Уже вижу тебя, привет! 👋',
-  'Наконец-то! Пошли 😄',
-  'Сегодня был такой длинный день',
-  'Понимаю, тоже устал',
-  'Когда ты отдыхать-то будешь?',
-  'Скоро отпуск',
-  'Куда планируешь?',
-  'Ещё не решил, может море',
-  'О, завидую! Я давно не был на море',
-  'Поехали вместе!',
-  'Это была бы идея 😃',
-  'Серьёзно говорю, давай планировать',
-  'Окей, обсудим в эти выходные',
-  'Договорились 🤝',
-  'Жду не дождусь!',
-  'Я тоже',
+// ─── Диалоги ─────────────────────────────────────────────────────────────────
+const THREADS = [
+  [
+    { from: 'other', text: 'Привет! Вижу, ты тоже из Киева — редкость здесь 😊' },
+    { from: 'me',    text: 'Привет! Да, родился и вырос 😄 А ты давно?' },
+    { from: 'other', text: 'Года три уже. Скучаешь по городу?' },
+    { from: 'me',    text: 'Иногда. Особенно по Андреевскому спуску в осень' },
+    { from: 'other', text: 'Там я тоже люблю гулять! Чем занимаешься?' },
+    { from: 'me',    text: 'Программирую. А ты?' },
+    { from: 'other', text: 'Дизайн. Мы почти коллеги! 😄' },
+    { from: 'me',    text: 'Тогда давай за кофе — обсудим проекты?' },
+    { from: 'other', text: 'С удовольствием. Когда свободен?' },
+    { from: 'me',    text: 'В пятницу вечером?' },
+    { from: 'other', text: 'Отлично, договорились 🎉' },
+  ],
+  [
+    { from: 'other', text: 'Привет! Ты путешествуешь — куда была последняя поездка?' },
+    { from: 'me',    text: 'Привет! Прага месяц назад — потрясающий город!' },
+    { from: 'other', text: 'О, я живу в Праге! 😮 Что больше всего понравилось?' },
+    { from: 'me',    text: 'Карлов мост на рассвете — нет слов просто' },
+    { from: 'other', text: 'Это одно из моих любимых мест! Ты один был?' },
+    { from: 'me',    text: 'Один. Иногда люблю путешествовать соло' },
+    { from: 'other', text: 'Понимаю. Но вдвоём интереснее открывать места, согласен?' },
+    { from: 'me',    text: 'Согласен! Если попутчик правильный 😊' },
+    { from: 'other', text: 'А что для тебя "правильный"?' },
+    { from: 'me',    text: 'Любопытный и умеющий молчать, когда вид говорит за себя' },
+    { from: 'other', text: 'Мне кажется, я именно такая 😄' },
+    { from: 'me',    text: 'Надо проверить. Куда мечтаешь поехать следующей?' },
+    { from: 'other', text: 'Япония давняя мечта. А ты?' },
+    { from: 'me',    text: 'Патагония. Дикая природа и тишина' },
+  ],
+  [
+    { from: 'other', text: 'Привет! Ты занимаешься спортом — это сразу видно 💪' },
+    { from: 'me',    text: 'Привет! Ха, стараюсь 😄 Ты тоже по профилю видно' },
+    { from: 'other', text: 'Йога и бег. А ты что предпочитаешь?' },
+    { from: 'me',    text: 'Зал и велик. Всё, что на свежем воздухе' },
+    { from: 'other', text: 'О, я тоже! Где обычно катаешься?' },
+    { from: 'me',    text: 'По набережной в основном. Ты бываешь там?' },
+    { from: 'other', text: 'Каждые выходные почти. Как мы не пересекались? 😄' },
+    { from: 'me',    text: 'Видимо, судьба сводит нас здесь 😊' },
+    { from: 'other', text: 'Встретимся в субботу на набережной?' },
+    { from: 'me',    text: 'С удовольствием! В 10 утра?' },
+    { from: 'other', text: 'Идеально 🌟' },
+  ],
+  [
+    { from: 'other', text: 'Привет! Давно на приложении?' },
+    { from: 'me',    text: 'Привет! Несколько недель. Ты?' },
+    { from: 'other', text: 'Примерно так же. Интересно, но немного странно 😄' },
+    { from: 'me',    text: 'Согласен. Первое сообщение всегда сложнее отправить' },
+    { from: 'other', text: 'Мне повезло — ты написал(а) первым(ой) 😊' },
+    { from: 'me',    text: 'У тебя интересная анкета. Ты правда занимаешься йогой каждый день?' },
+    { from: 'other', text: 'Почти. Это помогает держать голову в порядке' },
+    { from: 'me',    text: 'Завидую дисциплине. Я больше хаотичный 😅' },
+    { from: 'other', text: 'Это не плохо! Хаос часто приводит к интересному 😄' },
+    { from: 'me',    text: 'Философски! Ты часто так думаешь?' },
+    { from: 'other', text: 'По образованию психолог — не могу не анализировать 😄' },
+    { from: 'me',    text: 'Тогда мне надо быть аккуратнее с тем, что говорю' },
+    { from: 'other', text: 'Расслабься, в нерабочее время я просто Катя 😊' },
+  ],
+  [
+    { from: 'other', text: 'Привет! Ты готовишь? Вижу кулинария в интересах 🍳' },
+    { from: 'me',    text: 'Привет! Да, это моя страсть. Итальянская и азиатская' },
+    { from: 'other', text: 'Обожаю итальянскую! Ты правда умеешь делать пасту?' },
+    { from: 'me',    text: 'Карбонара — моё фирменное 😄' },
+    { from: 'other', text: 'Я растаяла. Это путь к сердцу 😄' },
+    { from: 'me',    text: 'Тогда, может, как-нибудь приготовлю для тебя?' },
+    { from: 'other', text: 'Это от которого нельзя отказаться 😊' },
+    { from: 'me',    text: 'Именно так и задумывалось' },
+    { from: 'other', text: 'Принято! Что ещё умеешь?' },
+    { from: 'me',    text: 'Тайский карри, японские роллы, французские крепы...' },
+    { from: 'other', text: 'Подожди, ты Chef или кто? 😮' },
+    { from: 'me',    text: 'Любитель с серьёзным подходом 😄' },
+  ],
+  [
+    { from: 'other', text: 'Привет! Ты тоже за границей? Я в Варшаве' },
+    { from: 'me',    text: 'Привет! Да, в Берлине уже год. Как тебе Варшава?' },
+    { from: 'other', text: 'Нравится! Активный город. Ты скучаешь по Украине?' },
+    { from: 'me',    text: 'Иногда. По друзьям, по атмосфере. А ты?' },
+    { from: 'other', text: 'Очень. Особенно по домашней еде мамы 😄' },
+    { from: 'me',    text: 'Это вечная история 😊 Чем занимаешься в Варшаве?' },
+    { from: 'other', text: 'Маркетинг. А ты в Берлине?' },
+    { from: 'me',    text: 'IT. Берлин для этого идеальный' },
+    { from: 'other', text: 'Давно хотела туда. Есть любимые места?' },
+    { from: 'me',    text: 'Много! Приезжай — покажу' },
+    { from: 'other', text: 'Это приглашение? 😊' },
+    { from: 'me',    text: 'Абсолютно 😄 Ты как к спонтанным поездкам?' },
+    { from: 'other', text: 'Положительно! Особенно если есть хороший гид 😊' },
+  ],
+  [
+    { from: 'other', text: 'Привет! Ты реально читаешь по 2 книги в неделю?' },
+    { from: 'me',    text: 'Привет! Ха, стараюсь! Сейчас что-нибудь читаешь?' },
+    { from: 'other', text: '"Сто лет одиночества" — второй раз перечитываю' },
+    { from: 'me',    text: 'Маркес! Магический реализм — это особое' },
+    { from: 'other', text: 'Ещё что читала повторно — "Маленький принц" и "Мастер и Маргарита"' },
+    { from: 'me',    text: '"Маленький принц" — это вечно 😊 Могу что-то порекомендовать?' },
+    { from: 'other', text: 'Конечно!' },
+    { from: 'me',    text: '"Норвежский лес" Мураками — если ещё не читала' },
+    { from: 'other', text: 'Давно хотела! Спасибо 😊' },
+    { from: 'me',    text: 'Потом расскажи своё мнение — мне интересно' },
+  ],
+  [
+    { from: 'other', text: 'Привет! Журналист — о чём пишешь?' },
+    { from: 'me',    text: 'Привет! Технологии и общество. Ты чем занимаешься?' },
+    { from: 'other', text: 'Архитектор. Мы оба создаём что-то для людей, по сути 😊' },
+    { from: 'me',    text: 'Хорошая мысль! Что проектируешь?' },
+    { from: 'other', text: 'Общественные пространства — парки, библиотеки' },
+    { from: 'me',    text: 'Это потрясающе. Я хотел бы написать статью про таких архитекторов' },
+    { from: 'other', text: 'Намекаешь на интервью? 😄' },
+    { from: 'me',    text: 'Можно начать с этого 😊 Расскажи о любимом проекте' },
+    { from: 'other', text: 'Парк в Кракове. Придумала "тихие зоны" для интровертов' },
+    { from: 'me',    text: 'Это гениально! Ты правда думаешь о людях' },
+    { from: 'other', text: 'Стараюсь. Говорят, это редкость 😄' },
+    { from: 'me',    text: 'И за это тебя стоит знать лучше 😊' },
+  ],
 ];
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-const pick  = (arr)      => arr[rand(0, arr.length - 1)];
 
-// ---------- Генерация имён ----------
-const NAMES = [
-  'Анна','Мария','Дарья','Екатерина','Ольга','Наталья','Елена','Ирина',
-  'Александра','Юлия','Виктория','Татьяна','Людмила','Надежда','Галина',
-  'Алексей','Дмитрий','Сергей','Андрей','Максим','Иван','Никита','Кирилл',
-  'Михаил','Владимир','Артём','Роман','Павел','Евгений','Антон',
-];
-const CITIES = ['Москва','Санкт-Петербург','Казань','Новосибирск','Екатеринбург','Краснодар','Минск','Алматы'];
+async function main() {
+  const authConn = await mongoose.createConnection(AUTH_URI).asPromise();
+  const chatConn = await mongoose.createConnection(CHAT_URI).asPromise();
+  console.log('✅ Подключились к molo_auth и molo_chat');
 
-// ---------- Главная функция ----------
-async function seed() {
-  await connect();
-  console.log(`✅  Подключились к ${MONGO_URI}`);
+  // Находим главного пользователя
+  let roman;
+  if (MY_USER_ID) {
+    roman = await authConn.collection('users').findOne(
+      { _id: new mongoose.Types.ObjectId(MY_USER_ID) },
+      { projection: { _id: 1, name: 1 } }
+    );
+  } else {
+    roman = await authConn.collection('users').findOne(
+      { email: TARGET_EMAIL },
+      { projection: { _id: 1, name: 1 } }
+    );
+  }
 
-  const myId = new mongoose.Types.ObjectId(MY_USER_ID);
+  if (!roman) {
+    console.error(`❌ Пользователь не найден. Укажи MY_USER_ID или TARGET_EMAIL`);
+    process.exit(1);
+  }
+  console.log(`🎯 Главный пользователь: ${roman.name} (${roman._id})`);
 
-  // Очистка старых seed-данных
+  // Берём реальных тестовых пользователей из molo_auth
+  const testUsers = await authConn.collection('users').find(
+    {
+      _id: { $ne: roman._id },
+      email: { $exists: false },
+      deviceId: { $exists: false },
+      onboardingComplete: true,
+      name: { $exists: true },
+    },
+    { projection: { _id: 1, name: 1, userPhoto: 1, isOnline: 1 } }
+  ).sort({ _id: 1 }).toArray();
+
+  if (testUsers.length === 0) {
+    console.error('❌ Тестовые пользователи не найдены. Сначала запусти seedMasterTest.js');
+    process.exit(1);
+  }
+  console.log(`📋 Найдено тестовых пользователей: ${testUsers.length}`);
+
+  // Схемы
+  const ConvSchema = new mongoose.Schema({
+    participants:  [mongoose.Schema.Types.ObjectId],
+    lastMessage: {
+      text: String, senderId: mongoose.Schema.Types.ObjectId,
+      createdAt: Date, isRead: Boolean, nonce: { type: String, default: null },
+    },
+    unreadCount: { type: Map, of: Number, default: {} },
+    isPrivate:   { type: Boolean, default: false },
+    deletedFor:  [mongoose.Schema.Types.ObjectId],
+    createdAt:   Date, updatedAt: Date,
+    _isSeed:     Boolean,
+  });
+  const MsgSchema = new mongoose.Schema({
+    conversationId: mongoose.Schema.Types.ObjectId,
+    senderId:       mongoose.Schema.Types.ObjectId,
+    receiverId:     mongoose.Schema.Types.ObjectId,
+    messageType:    { type: String, default: 'text' },
+    text:           String,
+    isRead:         Boolean,
+    createdAt:      Date,
+    _isSeed:        Boolean,
+  });
+
+  const Conversation = chatConn.models.Conversation || chatConn.model('Conversation', ConvSchema);
+  const Message      = chatConn.models.Message      || chatConn.model('Message', MsgSchema);
+
   if (CLEAN) {
-    console.log('🧹  Удаляю старые seed-данные...');
-    const oldConvs  = await Conversation.find({ _isSeed: true }).select('_id');
-    const oldConvIds = oldConvs.map(c => c._id);
     await Message.deleteMany({ _isSeed: true });
-    await Conversation.deleteMany({ _isSeed: true });
-    await User.deleteMany({ _isSeedUser: true });
-    console.log(`   Удалено чатов: ${oldConvIds.length}`);
+    const res = await Conversation.deleteMany({ _isSeed: true });
+    console.log(`🧹 Удалено старых чатов: ${res.deletedCount}`);
   }
 
-  // 1. Создаём тестовых пользователей
-  console.log(`👥  Создаю ${CHAT_COUNT} тестовых пользователей...`);
-  const fakeUsers = [];
-  for (let i = 0; i < CHAT_COUNT; i++) {
-    const name = `${pick(NAMES)} ${i + 1}`;
-    const user = await User.create({
-      name,
-      age: rand(18, 35),
-      city: pick(CITIES),
-      isOnline: Math.random() > 0.6,
-      _isSeedUser: true,
-    });
-    fakeUsers.push(user);
-  }
-  console.log(`   Создано пользователей: ${fakeUsers.length}`);
-
-  // 2. Создаём чаты и сообщения
-  let totalMessages = 0;
   const now = Date.now();
+  let totalConvs = 0, totalMsgs = 0;
 
-  for (let ci = 0; ci < fakeUsers.length; ci++) {
-    const otherUser = fakeUsers[ci];
+  for (let i = 0; i < testUsers.length; i++) {
+    const other = testUsers[i];
+    const thread = THREADS[i % THREADS.length];
 
-    // Создаём conversation
+    const exists = await Conversation.findOne({
+      participants: { $all: [roman._id, other._id], $size: 2 },
+    });
+    if (exists) { continue; }
+
+    const convStart = new Date(now - rand(3, 30) * 86400000);
     const conv = await Conversation.create({
-      participants: [myId, otherUser._id],
+      participants: [roman._id, other._id],
       isPrivate: false,
-      unreadCount: { [myId.toString()]: rand(0, 5) },
-      createdAt: new Date(now - rand(1, 30) * 24 * 60 * 60 * 1000),
-      updatedAt: new Date(now - rand(0, 3) * 24 * 60 * 60 * 1000),
+      unreadCount: { [String(roman._id)]: rand(0, 3) },
+      createdAt: convStart, updatedAt: convStart,
       _isSeed: true,
     });
 
-    // Генерируем сообщения
-    const msgCount = rand(MSG_COUNT - 10, MSG_COUNT + 10);
     const messages = [];
-    let lastMsgDate = new Date(conv.createdAt);
+    let lastTs = convStart.getTime();
 
-    for (let mi = 0; mi < msgCount; mi++) {
-      // Случайный промежуток между сообщениями
-      lastMsgDate = new Date(lastMsgDate.getTime() + rand(30, 600) * 1000);
-      if (lastMsgDate > new Date()) lastMsgDate = new Date();
-
-      // Чередуем отправителей
-      const fromMe = Math.random() > 0.45;
-      const senderId   = fromMe ? myId : otherUser._id;
-      const receiverId = fromMe ? otherUser._id : myId;
-
+    for (let mi = 0; mi < thread.length; mi++) {
+      lastTs += rand(60, 900) * 1000;
+      if (lastTs > now) lastTs = now - rand(0, 3600) * 1000;
+      const fromMe = thread[mi].from === 'me';
       messages.push({
         conversationId: conv._id,
-        senderId,
-        receiverId,
+        senderId:   fromMe ? roman._id : other._id,
+        receiverId: fromMe ? other._id : roman._id,
         messageType: 'text',
-        text: pick(PHRASES),
-        isRead: mi < msgCount - rand(0, 5), // последние несколько — непрочитанные
-        createdAt: new Date(lastMsgDate),
+        text: thread[mi].text,
+        isRead: mi < thread.length - rand(0, 2),
+        createdAt: new Date(lastTs),
         _isSeed: true,
       });
     }
 
     await Message.insertMany(messages);
-    totalMessages += messages.length;
+    totalMsgs += messages.length;
 
-    // Обновляем lastMessage у conversation
     const last = messages[messages.length - 1];
     await Conversation.findByIdAndUpdate(conv._id, {
-      lastMessage: {
-        text:      last.text,
-        senderId:  last.senderId,
-        createdAt: last.createdAt,
-        isRead:    last.isRead,
-      },
+      lastMessage: { text: last.text, senderId: last.senderId, createdAt: last.createdAt, isRead: last.isRead },
       updatedAt: last.createdAt,
     });
 
-    if ((ci + 1) % 10 === 0 || ci === fakeUsers.length - 1) {
-      console.log(`   [${ci + 1}/${fakeUsers.length}] чатов создано, сообщений: ${totalMessages}`);
+    totalConvs++;
+    if (totalConvs % 5 === 0 || i === testUsers.length - 1) {
+      console.log(`  [${totalConvs}/${testUsers.length}] чатов, сообщений: ${totalMsgs}`);
     }
   }
 
-  console.log('\n🎉  Готово!');
-  console.log(`   Чатов:      ${fakeUsers.length}`);
-  console.log(`   Сообщений:  ${totalMessages}`);
-  console.log('\nЧтобы удалить seed-данные:');
-  console.log(`   CLEAN=true MY_USER_ID=${MY_USER_ID} node scripts/seedTestChats.js`);
+  console.log(`\n🎉 Готово! Чатов: ${totalConvs}  Сообщений: ${totalMsgs}`);
+  console.log('\n   Удалить seed-чаты:');
+  console.log('   CLEAN=true node scripts/seedTestChats.js\n');
 
-  await mongoose.disconnect();
+  await authConn.close();
+  await chatConn.close();
+  process.exit(0);
 }
 
-seed().catch(err => {
-  console.error('❌  Ошибка:', err);
-  mongoose.disconnect();
+main().catch(err => {
+  console.error('❌ Ошибка:', err);
   process.exit(1);
 });
