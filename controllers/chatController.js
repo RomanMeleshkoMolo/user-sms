@@ -65,7 +65,7 @@ function getReqUserId(req) {
 }
 
 /**
- * GET /chats - Получить список всех чатов пользователя
+ * GET /chats - Получить список чатов пользователя (с пагинацией)
  */
 async function getConversations(req, res) {
   try {
@@ -76,18 +76,36 @@ async function getConversations(req, res) {
     }
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
 
-    // Получаем все чаты пользователя (исключая soft-deleted)
+    // Получаем чаты пользователя с пагинацией (исключая soft-deleted)
+    // Запрашиваем на 1 больше чтобы определить hasMore без COUNT запроса
     const conversations = await Conversation.find({
       participants: userObjectId,
       deletedFor: { $ne: userObjectId },
     })
       .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit + 1)
       .lean();
+
+    const hasMore = conversations.length > limit;
+    const pageConversations = hasMore ? conversations.slice(0, limit) : conversations;
+
+    // Суммируем непрочитанные по ВСЕМ чатам — только поле unreadCount, без обогащения
+    // Выполняем параллельно с обогащением страницы чтобы не добавлять задержку
+    const totalUnreadPromise = Conversation.find(
+      { participants: userObjectId, deletedFor: { $ne: userObjectId } },
+      { unreadCount: 1 }
+    ).lean().then(all =>
+      all.reduce((sum, c) => sum + (c.unreadCount?.[userId.toString()] || 0), 0)
+    );
 
     // Обогащаем данными о собеседнике
     const enrichedConversations = await Promise.all(
-      conversations.map(async (conv) => {
+      pageConversations.map(async (conv) => {
         // Находим собеседника (другого участника)
         const otherParticipantId = conv.participants.find(
           (p) => p.toString() !== userId.toString()
@@ -139,9 +157,11 @@ async function getConversations(req, res) {
     // Filter out conversations where the other user has been deleted
     const validConversations = enrichedConversations.filter(c => c.otherUser !== null);
 
-    console.log(`[chat] getConversations for user ${userId}: found ${validConversations.length} (${enrichedConversations.length - validConversations.length} filtered - deleted users)`);
+    const totalUnreadCount = await totalUnreadPromise;
 
-    return res.json({ conversations: validConversations });
+    console.log(`[chat] getConversations for user ${userId}: page=${page} found ${validConversations.length} hasMore=${hasMore} totalUnread=${totalUnreadCount}`);
+
+    return res.json({ conversations: validConversations, hasMore, page, totalUnreadCount });
   } catch (e) {
     console.error('[chat] getConversations error:', e);
     return res.status(500).json({ message: 'Server error' });
