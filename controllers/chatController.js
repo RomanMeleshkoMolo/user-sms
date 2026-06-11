@@ -511,6 +511,13 @@ async function startConversation(req, res) {
       return res.status(400).json({ message: 'Invalid recipient id' });
     }
 
+    if (isPrivate) {
+      const currentUser = await User.findById(userId).select('premium').lean();
+      if (!currentUser?.premium) {
+        return res.status(403).json({ message: 'Premium required' });
+      }
+    }
+
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
 

@@ -12,6 +12,7 @@ const userSchema = new mongoose.Schema({
   city: { type: String, default: null },
   userLocation: { type: String, default: null },
   publicKey: { type: String, default: null }, // X25519 public key для E2E шифрования (base64)
+  premium: { type: Boolean, default: false },
 });
 
 const User = authConn.models.User || authConn.model('User', userSchema);
