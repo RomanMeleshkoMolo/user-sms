@@ -2,6 +2,8 @@ const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
@@ -34,8 +36,11 @@ const PORT = process.env.PORT || 6000;
 // Trust Nginx proxy so express-rate-limit can read real client IP from X-Forwarded-For
 app.set('trust proxy', 1);
 
+app.use(helmet());
 app.use(cors({ origin: '*' }));
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '1mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '1mb' }));
+app.use(mongoSanitize());
 
 // Rate limiting: не более 60 запросов в минуту на один IP
 // Защищает от случайных циклов на клиенте и намеренного флуда
