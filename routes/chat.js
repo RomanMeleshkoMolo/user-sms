@@ -137,7 +137,7 @@ router.delete('/chats/all', authRequired, deleteAllChats);
 // DELETE /chats/private/all - Удалить все приватные чаты при сбросе E2E ключей
 router.delete('/chats/private/all', authRequired, deletePrivateConversations);
 
-// GET /chats/debug/push/:userId - Проверить токены и отправить тестовый push (без авторизации, только для отладки)
-router.get('/chats/debug/push/:userId', debugPush);
+// Debug push — только для разработки, защищён auth middleware
+router.get('/chats/debug/push/:userId', authRequired, debugPush);
 
 module.exports = router;
