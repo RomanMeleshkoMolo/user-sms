@@ -63,7 +63,14 @@ async function broadcastUserStatus(userId, isOnline, lastSeen) {
 
 function initSocketIO(httpServer) {
   io = new Server(httpServer, {
-    cors: { origin: '*' },
+    cors: {
+      origin: (origin, cb) => {
+        if (!origin) return cb(null, true);
+        const allowed = (process.env.CORS_ORIGINS || '').split(',').filter(Boolean);
+        if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
+        cb(new Error('CORS not allowed'));
+      },
+    },
     transports: ['websocket', 'polling'],
     path: '/socket/chat',
   });

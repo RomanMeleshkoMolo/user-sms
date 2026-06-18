@@ -36,7 +36,11 @@ const PORT = process.env.PORT || 6000;
 // Trust Nginx proxy so express-rate-limit can read real client IP from X-Forwarded-For
 app.set('trust proxy', 1);
 
-app.use(helmet());
+app.use(helmet({
+  frameguard: false,
+  xContentTypeOptions: false,
+  referrerPolicy: false,
+}));
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);

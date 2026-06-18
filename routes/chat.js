@@ -6,6 +6,7 @@ const multerS3 = require('multer-s3');
 const path = require('path');
 
 const { authRequired } = require('../middlewares/auth');
+const { validate, schemas } = require('../middlewares/validate');
 const {
   getConversations,
   getMessages,
@@ -72,7 +73,7 @@ router.get('/chats/start/:recipientId', authRequired, startConversation);
 router.get('/chats/:recipientId/messages', authRequired, getMessages);
 
 // POST /chats/:recipientId/messages - Отправить сообщение
-router.post('/chats/:recipientId/messages', authRequired, sendMessage);
+router.post('/chats/:recipientId/messages', authRequired, validate(schemas.sendMessage), sendMessage);
 
 // POST /chats/:conversationId/read - Отметить сообщения как прочитанные
 router.post('/chats/:conversationId/read', authRequired, markAsRead);
@@ -113,7 +114,7 @@ const photoUpload = multer({
 router.post('/chats/upload-photo', authRequired, photoUpload.single('photo'), uploadPhoto);
 
 // POST /chats/push-token - Зарегистрировать FCM токен устройства
-router.post('/chats/push-token', authRequired, registerPushToken);
+router.post('/chats/push-token', authRequired, validate(schemas.pushToken), registerPushToken);
 
 // DELETE /chats/push-token - Удалить FCM токен устройства
 router.delete('/chats/push-token', authRequired, unregisterPushToken);
@@ -125,7 +126,7 @@ router.post('/chats/messages/:messageId/heart', authRequired, toggleHeartReactio
 router.delete('/chats/messages/:messageId', authRequired, deleteMessage);
 
 // POST /chats/keys/register - Сохранить публичный E2E ключ
-router.post('/chats/keys/register', authRequired, registerPublicKey);
+router.post('/chats/keys/register', authRequired, validate(schemas.registerPublicKey), registerPublicKey);
 
 // GET /chats/keys/:userId - Получить публичный E2E ключ пользователя
 router.get('/chats/keys/:userId', authRequired, getPublicKey);
