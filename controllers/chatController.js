@@ -296,6 +296,19 @@ async function sendMessage(req, res) {
     const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
     const messageText = text ? text.trim() : '';
 
+    // Не-премиум может отвечать только в чате, который уже существует
+    // (т.е. премиум-пользователь написал первым и открыл переписку)
+    const sender = await User.findById(userObjectId).select('premium premiumUntil').lean();
+    const senderIsPremium = sender?.premium && (!sender.premiumUntil || sender.premiumUntil > new Date());
+    if (!senderIsPremium) {
+      const existingConv = await Conversation.findOne({
+        participants: { $all: [userObjectId, recipientObjectId] },
+      }).select('_id').lean();
+      if (!existingConv) {
+        return res.status(403).json({ message: 'Premium required to start a conversation', code: 'PREMIUM_REQUIRED' });
+      }
+    }
+
     // Подготовка данных replyTo
     let replyToData = null;
     if (replyTo && replyTo._id && replyTo.text) {
