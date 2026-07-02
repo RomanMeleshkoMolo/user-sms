@@ -31,7 +31,9 @@ const s3 = new S3Client({
 });
 
 // In-memory кэш presigned URL: key → { url, expiresAt }
+// Ограничен по размеру, иначе Map растёт неограниченно при долгой работе процесса.
 const presignedUrlCache = new Map();
+const PRESIGNED_CACHE_MAX = 5000;
 
 // Генерация presigned URL для S3 с кэшированием
 async function getPhotoUrl(key) {
@@ -45,6 +47,11 @@ async function getPhotoUrl(key) {
   try {
     const cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key });
     const url = await getSignedUrl(s3, cmd, { expiresIn: PRESIGNED_TTL_SEC });
+    // Простая LRU-эвикция: при переполнении удаляем самый старый ключ (первый в Map).
+    // Просроченную запись перезаписываем — Map.set обновит позицию вставки.
+    if (presignedUrlCache.size >= PRESIGNED_CACHE_MAX && !presignedUrlCache.has(key)) {
+      presignedUrlCache.delete(presignedUrlCache.keys().next().value);
+    }
     presignedUrlCache.set(key, { url, expiresAt: Date.now() + PRESIGNED_CACHE_TTL_MS });
     return url;
   } catch (e) {
@@ -94,14 +101,28 @@ async function getConversations(req, res) {
     const hasMore = conversations.length > limit;
     const pageConversations = hasMore ? conversations.slice(0, limit) : conversations;
 
-    // Суммируем непрочитанные по ВСЕМ чатам — только поле unreadCount, без обогащения
-    // Выполняем параллельно с обогащением страницы чтобы не добавлять задержку
-    const totalUnreadPromise = Conversation.find(
-      { participants: userObjectId, deletedFor: { $ne: userObjectId } },
-      { unreadCount: 1 }
-    ).lean().then(all =>
-      all.reduce((sum, c) => sum + (c.unreadCount?.[userId.toString()] || 0), 0)
-    );
+    // Суммируем непрочитанные по ВСЕМ чатам через агрегацию на стороне Mongo,
+    // а не загрузкой всех документов в Node (раньше .find() тянул unreadCount всех
+    // бесед юзера и суммировал в JS — тяжело при сотнях чатов). $getField достаёт
+    // значение из Map unreadCount по динамическому ключу userId. Выполняем
+    // параллельно с обогащением страницы, чтобы не добавлять задержку.
+    const userIdStr = userId.toString();
+    const totalUnreadPromise = Conversation.aggregate([
+      { $match: { participants: userObjectId, deletedFor: { $ne: userObjectId } } },
+      {
+        $group: {
+          _id: null,
+          total: {
+            $sum: {
+              $ifNull: [
+                { $getField: { field: { $literal: userIdStr }, input: '$unreadCount' } },
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]).then(rows => rows[0]?.total || 0);
 
     // Обогащаем данными о собеседнике
     const enrichedConversations = await Promise.all(
@@ -262,12 +283,6 @@ async function sendMessage(req, res) {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
     const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, voiceWaveform = null, nonce = null, photoUrl, photoKey, photoNonce = null, isPrivate = false } = req.body;
-
-    if (messageType === 'image') {
-      console.log(`[chat][E2E DEBUG] image body: photoUrl=${!!photoUrl}, photoKey=${!!photoKey}, photoNonce=${photoNonce ? photoNonce.slice(0,10) + '...' : 'null'}`);
-    }
-    const effectiveNonce = messageType === 'voice' ? voiceNonce : messageType === 'image' ? photoNonce : nonce;
-    console.log(`[chat][E2E DEBUG] sendMessage from ${userId} → type=${messageType}, encrypted=${effectiveNonce ? '✅ ДА' : '❌ НЕТ'}`);
 
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({ message: 'Unauthorized' });

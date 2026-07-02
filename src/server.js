@@ -45,7 +45,8 @@ app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
     const allowed = (process.env.CORS_ORIGINS || '').split(',').filter(Boolean);
-    if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
+    // Пустой список = НЕ пропускаем чужие Origin (RN идёт без Origin — см. выше)
+    if (allowed.includes(origin)) return cb(null, true);
     cb(new Error('CORS not allowed'));
   },
 }));
