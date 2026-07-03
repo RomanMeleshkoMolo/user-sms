@@ -1,12 +1,67 @@
 const { Server } = require('socket.io');
 const { createAdapter } = require('@socket.io/redis-adapter');
 const { createClient } = require('ioredis');
+const Redis = require('ioredis');
 const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
 const Conversation = require('../models/conversationModel');
 const { sendCallNotification } = require('../services/pushNotificationService');
 
 let io = null;
+
+// ─── Presence (учёт присутствия через Redis) ────────────────────────────────
+// Раньше каждый connect/disconnect писал isOnline в общую коллекцию users и
+// рассылал статус — при 10k онлайн и флаппинге соединений это шторм записей.
+// Теперь: считаем активные соединения пользователя в Redis (все устройства/сокеты),
+// а в Mongo пишем и рассылаем ТОЛЬКО на переходах 0→1 (online) и 1→0 (offline).
+// Offline откладываем на grace-период и перепроверяем — это гасит флаппинг и
+// корректно работает при нескольких устройствах.
+const presenceRedis = new Redis({
+  host: process.env.REDIS_HOST || '127.0.0.1',
+  port: Number(process.env.REDIS_PORT) || 6379,
+  password: process.env.REDIS_PASSWORD || undefined,
+  maxRetriesPerRequest: 1,
+  retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 1000)),
+});
+presenceRedis.on('error', (e) => console.error('[presence] redis error:', e.message));
+
+const PRESENCE_TTL_SEC = 90;      // safety-TTL счётчика (на случай падения инстанса)
+const OFFLINE_GRACE_MS = 15_000;  // задержка перед пометкой offline (гасит флаппинг)
+
+// userId → timer отложенной пометки offline (in-memory на текущем инстансе)
+const pendingOffline = new Map();
+
+async function presenceIncr(userId) {
+  try {
+    const key = `presence:${userId}`;
+    const n = await presenceRedis.incr(key);
+    await presenceRedis.expire(key, PRESENCE_TTL_SEC);
+    return n;
+  } catch {
+    return 1; // Redis недоступен — считаем пользователя онлайн
+  }
+}
+
+async function presenceDecr(userId) {
+  try {
+    const key = `presence:${userId}`;
+    const n = await presenceRedis.decr(key);
+    if (n <= 0) { await presenceRedis.del(key); return 0; } // clamp от отрицательных
+    await presenceRedis.expire(key, PRESENCE_TTL_SEC);
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
+async function presenceCount(userId) {
+  try {
+    const n = parseInt(await presenceRedis.get(`presence:${userId}`), 10);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
 
 // Хранилище активных офферов звонков (recipientId → offer)
 // Если получатель переподключается пока звонок активен — оффер переотправляется
@@ -78,6 +133,21 @@ function initSocketIO(httpServer) {
   io.adapter(createRedisAdapter());
   console.log('[socket-chat] Redis adapter connected');
 
+  // Периодически продлеваем safety-TTL счётчика присутствия для живых локальных
+  // соединений. Иначе под долгой сессией ключ истёк бы и при нескольких устройствах
+  // disconnect одного дал бы ложный offline. Каждый инстанс продлевает только свои
+  // сокеты; TTL остаётся живым, пока пользователь подключён хотя бы к одному инстансу.
+  setInterval(() => {
+    if (!io) return;
+    const uids = new Set();
+    for (const s of io.sockets.sockets.values()) {
+      if (s.userId) uids.add(s.userId);
+    }
+    uids.forEach((uid) => {
+      presenceRedis.expire(`presence:${uid}`, PRESENCE_TTL_SEC).catch(() => {});
+    });
+  }, 30_000);
+
   // JWT auth middleware
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
@@ -99,15 +169,22 @@ function initSocketIO(httpServer) {
     console.log(`[socket-chat] User connected: ${socket.userId}`);
     socket.join(`user:${socket.userId}`);
 
-    // Обновляем статус онлайн
-    try {
-      await User.findByIdAndUpdate(socket.userId, {
-        isOnline: true,
-        lastSeen: new Date(),
-      });
-      broadcastUserStatus(socket.userId, true, null);
-    } catch (e) {
-      console.error('[socket-chat] set online error:', e.message);
+    // Отменяем отложенную пометку offline (переподключение / флаппинг)
+    const pending = pendingOffline.get(socket.userId);
+    if (pending) { clearTimeout(pending); pendingOffline.delete(socket.userId); }
+
+    // Пишем online в Mongo и рассылаем статус только при переходе 0→1
+    const count = await presenceIncr(socket.userId);
+    if (count === 1) {
+      try {
+        await User.findByIdAndUpdate(socket.userId, {
+          isOnline: true,
+          lastSeen: new Date(),
+        });
+        broadcastUserStatus(socket.userId, true, null);
+      } catch (e) {
+        console.error('[socket-chat] set online error:', e.message);
+      }
     }
 
     // Если для этого юзера есть активный оффер (он открыл приложение по пушу) — переотправляем
@@ -212,16 +289,27 @@ function initSocketIO(httpServer) {
 
     socket.on('disconnect', async () => {
       console.log(`[socket-chat] User disconnected: ${socket.userId}`);
-      const lastSeen = new Date();
-      try {
-        await User.findByIdAndUpdate(socket.userId, {
-          isOnline: false,
-          lastSeen,
-        });
-        broadcastUserStatus(socket.userId, false, lastSeen);
-      } catch (e) {
-        console.error('[socket-chat] set offline error:', e.message);
-      }
+
+      const count = await presenceDecr(socket.userId);
+      if (count > 0) return; // остались активные соединения — статус не трогаем
+
+      // Grace: возможно это флаппинг. Ждём и перепроверяем перед пометкой offline.
+      const uid = socket.userId;
+      const prev = pendingOffline.get(uid);
+      if (prev) clearTimeout(prev);
+      const timer = setTimeout(async () => {
+        pendingOffline.delete(uid);
+        // Переподключился (в т.ч. на другом инстансе) — счётчик > 0, пропускаем
+        if (await presenceCount(uid) > 0) return;
+        const lastSeen = new Date();
+        try {
+          await User.findByIdAndUpdate(uid, { isOnline: false, lastSeen });
+          broadcastUserStatus(uid, false, lastSeen);
+        } catch (e) {
+          console.error('[socket-chat] set offline error:', e.message);
+        }
+      }, OFFLINE_GRACE_MS);
+      pendingOffline.set(uid, timer);
     });
   });
 
