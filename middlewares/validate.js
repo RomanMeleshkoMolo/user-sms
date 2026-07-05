@@ -15,18 +15,22 @@ const schemas = {
   // text обязателен только для обычных текстовых/системных сообщений —
   // voice и photo сообщения содержимое несут в своих полях (voiceUrl/photoUrl)
   sendMessage: Joi.object({
-    text: Joi.string().max(5000).allow('').when('messageType', {
-      is: Joi.string().valid('voice', 'photo'),
+    // text обязателен только для текстовых/системных; voice и image несут
+    // содержимое в своих полях (voiceUrl/photoUrl)
+    text: Joi.string().max(5000).allow('', null).when('messageType', {
+      is: Joi.string().valid('voice', 'image'),
       then: Joi.optional(),
       otherwise: Joi.required(),
     }),
     nonce: Joi.string().max(500).allow(null),
-    messageType: Joi.string().valid('text', 'voice', 'photo', 'system').default('text'),
+    // messageType: тип 'image' (как в модели и на клиенте), не 'photo'
+    messageType: Joi.string().valid('text', 'voice', 'image', 'system').default('text'),
+    // replyTo может быть null (обычное сообщение без ответа) — клиент всегда шлёт поле
     replyTo: Joi.object({
       _id: Joi.string(),
-      text: Joi.string().allow(''),
+      text: Joi.string().allow('', null),
       senderId: Joi.string().allow(null),
-    }).unknown(true),
+    }).unknown(true).allow(null),
     isPrivate: Joi.boolean(),
     // Поля голосового сообщения
     voiceUrl: Joi.string().max(2000).when('messageType', {
@@ -38,9 +42,9 @@ const schemas = {
     voiceDuration: Joi.number().min(0),
     voiceNonce: Joi.string().max(500).allow(null),
     voiceWaveform: Joi.array().items(Joi.number()).allow(null),
-    // Поля фото-сообщения
+    // Поля фото-сообщения (messageType='image')
     photoUrl: Joi.string().max(2000).when('messageType', {
-      is: 'photo',
+      is: 'image',
       then: Joi.required(),
       otherwise: Joi.optional(),
     }),
