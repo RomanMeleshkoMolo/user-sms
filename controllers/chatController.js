@@ -334,18 +334,38 @@ async function sendMessage(req, res) {
       };
     }
 
+    const isPrivateChat = isPrivate === true || isPrivate === 'true';
+
+    // Защита от plaintext в приватном чате: клиент ОБЯЗАН прислать nonce
+    // (зашифрованный payload). Иначе сбой шифрования на клиенте молча
+    // сохранил бы открытый текст на сервере и он утёк бы в push.
+    if (isPrivateChat) {
+      if (messageType === 'text' && !nonce) {
+        return res.status(400).json({ message: 'Encrypted payload required for private chat', code: 'E2E_REQUIRED' });
+      }
+      if (messageType === 'voice' && !voiceNonce) {
+        return res.status(400).json({ message: 'Encrypted payload required for private chat', code: 'E2E_REQUIRED' });
+      }
+      if (messageType === 'image' && !photoNonce) {
+        return res.status(400).json({ message: 'Encrypted payload required for private chat', code: 'E2E_REQUIRED' });
+      }
+    }
+
     // Ищем беседу с учётом типа (приватная / обычная)
     let conversation = await Conversation.findOne({
       participants: { $all: [userObjectId, recipientObjectId] },
-      isPrivate: isPrivate === true || isPrivate === 'true',
+      isPrivate: isPrivateChat,
     });
 
-    // Текст для push-уведомления (сервер не может расшифровать E2E)
-    const pushText = messageType === 'voice'
-      ? '🎤 Голосовое сообщение'
-      : messageType === 'image'
-        ? '📷 Фото'
-        : (nonce ? 'Новое сообщение' : messageText);
+    // Текст для push-уведомления (сервер не может расшифровать E2E).
+    // Приватный чат: не раскрываем ни контент, ни тип сообщения.
+    const pushText = isPrivateChat
+      ? 'Новое сообщение'
+      : messageType === 'voice'
+        ? '🎤 Голосовое сообщение'
+        : messageType === 'image'
+          ? '📷 Фото'
+          : (nonce ? 'Новое сообщение' : messageText);
 
     // Данные для lastMessage: для E2E храним шифртекст + nonce, чтобы клиент мог расшифровать
     const lastMessageData = {
