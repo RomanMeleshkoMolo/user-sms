@@ -57,7 +57,7 @@ const schemas = {
   }),
 
   pushToken: Joi.object({
-    token: Joi.string().max(500).required(),
+    fcmToken: Joi.string().max(500).required(),
     platform: Joi.string().valid('android', 'ios').max(10),
     deviceId: Joi.string().max(255),
   }),
