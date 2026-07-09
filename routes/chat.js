@@ -7,6 +7,7 @@ const path = require('path');
 
 const { authRequired } = require('../middlewares/auth');
 const { validate, schemas } = require('../middlewares/validate');
+const { photoRateLimit } = require('../middlewares/photoRateLimit');
 const {
   getConversations,
   getMessages,
@@ -111,7 +112,8 @@ const photoUpload = multer({
 });
 
 // POST /chats/upload-photo - Загрузить фото для чата
-router.post('/chats/upload-photo', authRequired, photoUpload.single('photo'), uploadPhoto);
+// photoRateLimit ДО multer: отклонённый запрос не грузит файл в S3
+router.post('/chats/upload-photo', authRequired, photoRateLimit, photoUpload.single('photo'), uploadPhoto);
 
 // POST /chats/push-token - Зарегистрировать FCM токен устройства
 router.post('/chats/push-token', authRequired, validate(schemas.pushToken), registerPushToken);
