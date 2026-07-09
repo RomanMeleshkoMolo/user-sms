@@ -28,6 +28,15 @@ const conversationSchema = new mongoose.Schema({
   // Приватный чат (E2E шифрование, не модерируется)
   isPrivate: { type: Boolean, default: false },
 
+  // Статус приватного чата: 'pending' — запрос отправлен, ждёт согласия
+  // получателя; 'active' — согласие получено, чат работает. Обычные (не
+  // приватные) чаты всегда 'active'.
+  status: { type: String, enum: ['active', 'pending'], default: 'active' },
+
+  // Кто инициировал приватный чат (отправил запрос). Нужно для направления
+  // запроса и адресата уведомлений accepted/declined.
+  initiatorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
   // Пользователи, для которых чат "удалён" (soft-delete при переустановке)
   deletedFor: [{
     type: mongoose.Schema.Types.ObjectId,

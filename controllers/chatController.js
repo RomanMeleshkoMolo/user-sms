@@ -89,10 +89,17 @@ async function getConversations(req, res) {
     const skip = (page - 1) * limit;
 
     // Получаем чаты пользователя с пагинацией (исключая soft-deleted)
-    // Запрашиваем на 1 больше чтобы определить hasMore без COUNT запроса
+    // Запрашиваем на 1 больше чтобы определить hasMore без COUNT запроса.
+    // Входящие приватные ЗАПРОСЫ (pending, инициированы собеседником) в списке
+    // не показываем — они приходят получателю отдельной модалкой-запросом.
+    // Исходящие pending (инициатор — я) показываем как «ожидает».
     const conversations = await Conversation.find({
       participants: userObjectId,
       deletedFor: { $ne: userObjectId },
+      $or: [
+        { status: { $ne: 'pending' } },
+        { initiatorId: userObjectId },
+      ],
     })
       .sort({ updatedAt: -1 })
       .skip(skip)
@@ -160,6 +167,8 @@ async function getConversations(req, res) {
         return {
           _id: conv._id,
           isPrivate: conv.isPrivate || false,
+          status: conv.status || 'active',
+          initiatorId: conv.initiatorId ? String(conv.initiatorId) : null,
           otherUser: otherUser ? {
             _id: otherUser._id,
             name: otherUser.name,
@@ -367,6 +376,22 @@ async function sendMessage(req, res) {
       participants: { $all: [userObjectId, recipientObjectId] },
       isPrivate: isPrivateChat,
     });
+
+    // Приватный чат нельзя использовать, пока получатель не принял запрос.
+    if (isPrivateChat && conversation && conversation.status === 'pending') {
+      return res.status(403).json({
+        message: 'Private chat request is not accepted yet',
+        code: 'PRIVATE_PENDING',
+      });
+    }
+    // Приватную беседу нельзя создать «на лету» отправкой сообщения — только
+    // через принятый запрос (request → accept). Без беседы писать нельзя.
+    if (isPrivateChat && !conversation) {
+      return res.status(403).json({
+        message: 'Private chat requires an accepted request',
+        code: 'PRIVATE_REQUEST_REQUIRED',
+      });
+    }
 
     // Текст для push-уведомления (сервер не может расшифровать E2E).
     // Приватный чат: не раскрываем ни контент, ни тип сообщения.
@@ -586,9 +611,16 @@ async function startConversation(req, res) {
       isPrivate,
     });
 
-    const isNewConversation = !conversation;
+    // Приватный чат через этот эндпоинт не создаём — только через запрос
+    // (request → accept). Возвращаем лишь уже активный приватный чат.
+    if (isPrivate && (!conversation || conversation.status === 'pending')) {
+      return res.status(403).json({
+        message: 'Private chat requires an accepted request',
+        code: 'PRIVATE_REQUEST_REQUIRED',
+      });
+    }
 
-    // Если нет - создаём пустую
+    // Если нет - создаём пустую (только обычные чаты)
     if (!conversation) {
       conversation = await Conversation.create({
         participants: [userObjectId, recipientObjectId],
@@ -618,18 +650,10 @@ async function startConversation(req, res) {
       photoUrl = photoKey ? await getPhotoUrl(photoKey) : (directUrl || null);
     }
 
-    // При создании нового приватного чата — уведомляем собеседника мгновенно через socket
-    if (isNewConversation && isPrivate) {
-      emitToUser(String(recipientId), 'private_chat_created', {
-        conversationId: conversation._id,
-        initiatorId: String(userId),
-      });
-      console.log(`[chat] Emitted private_chat_created to user ${recipientId}`);
-    }
-
     return res.json({
       conversationId: conversation._id,
       isPrivate: conversation.isPrivate || false,
+      status: conversation.status || 'active',
       otherUser: otherUser ? {
         _id: otherUser._id,
         name: otherUser.name,
@@ -1213,6 +1237,306 @@ async function deletePrivateConversations(req, res) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Приватный чат по согласию: request → accept / decline
+// ─────────────────────────────────────────────────────────────────────────
+
+// Строит карточку пользователя (для списков/уведомлений) с presigned-фото.
+async function buildUserCard(userDoc) {
+  if (!userDoc) return null;
+  let photoUrl = null;
+  if (userDoc.userPhoto?.[0]) {
+    const rawPhoto = userDoc.userPhoto[0];
+    const photoKey = typeof rawPhoto === 'object' ? rawPhoto.key : rawPhoto;
+    const directUrl = typeof rawPhoto === 'object' ? rawPhoto.url : null;
+    photoUrl = photoKey ? await getPhotoUrl(photoKey) : (directUrl || null);
+  }
+  return {
+    _id: userDoc._id,
+    name: userDoc.name,
+    age: userDoc.age,
+    photo: photoUrl,
+    city: userDoc.city || userDoc.userLocation || null,
+    isOnline: userDoc.isOnline || false,
+    lastSeen: userDoc.lastSeen,
+  };
+}
+
+/**
+ * POST /chats/private/request/:recipientId — отправить запрос на приватный чат.
+ * Создаёт беседу со status='pending' и уведомляет получателя (socket + push).
+ */
+async function requestPrivateConversation(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { recipientId } = req.params;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    if (!recipientId || !mongoose.Types.ObjectId.isValid(String(recipientId))) {
+      return res.status(400).json({ message: 'Invalid recipient id' });
+    }
+    if (String(recipientId) === String(userId)) {
+      return res.status(400).json({ message: 'Cannot request yourself' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
+
+    // Приватный чат — только для премиум-инициатора
+    const currentUser = await User.findById(userObjectId).select('premium premiumUntil name userPhoto').lean();
+    const isPremium = currentUser?.premium && (!currentUser.premiumUntil || currentUser.premiumUntil > new Date());
+    if (!isPremium) {
+      return res.status(403).json({ message: 'Premium required', code: 'PREMIUM_REQUIRED' });
+    }
+
+    let conversation = await Conversation.findOne({
+      participants: { $all: [userObjectId, recipientObjectId] },
+      isPrivate: true,
+    });
+
+    if (conversation) {
+      // Уже активный приватный чат — сообщаем клиенту
+      if (conversation.status === 'active') {
+        return res.status(200).json({ status: 'active', conversationId: conversation._id });
+      }
+      // Уже есть pending
+      if (conversation.status === 'pending') {
+        // Встречный запрос: собеседник уже просил меня — принимаем взаимно
+        if (String(conversation.initiatorId) === String(recipientId)) {
+          conversation.status = 'active';
+          await conversation.save();
+          const me = await User.findById(userObjectId)
+            .select('name age userPhoto isOnline lastSeen city userLocation').lean();
+          emitToUser(String(recipientId), 'private_chat_accepted', {
+            conversationId: conversation._id,
+            otherUser: await buildUserCard(me),
+          });
+          const otherDoc = await User.findById(recipientObjectId)
+            .select('name age userPhoto isOnline lastSeen city userLocation').lean();
+          return res.status(200).json({ status: 'active', conversationId: conversation._id, otherUser: await buildUserCard(otherDoc) });
+        }
+        // Мой же запрос уже висит
+        return res.status(200).json({ status: 'pending', conversationId: conversation._id, already: true });
+      }
+    }
+
+    // Создаём pending-запрос
+    conversation = await Conversation.create({
+      participants: [userObjectId, recipientObjectId],
+      isPrivate: true,
+      status: 'pending',
+      initiatorId: userObjectId,
+    });
+    console.log(`[chat] Private request ${conversation._id}: ${userId} → ${recipientId}`);
+
+    const initiatorCard = await buildUserCard(currentUser);
+
+    // Уведомляем получателя мгновенно (socket)
+    emitToUser(String(recipientId), 'private_chat_request', {
+      conversationId: conversation._id,
+      initiator: initiatorCard,
+      createdAt: conversation.createdAt,
+    });
+
+    // Push (через RabbitMQ, retry при ошибке FCM)
+    ;(async () => {
+      try {
+        await publishNotification({
+          userId: String(recipientId),
+          title: currentUser?.name || 'Пользователь',
+          body: 'Запрос на приватный чат',
+          data: {
+            type: 'private_chat_request',
+            conversationId: conversation._id?.toString() || '',
+            initiatorId: String(userId),
+            initiatorName: currentUser?.name || '',
+          },
+        });
+      } catch (err) {
+        console.error('[chat] private request push error:', err.message);
+      }
+    })();
+
+    // Данные собеседника для «ожидающей» строки в списке инициатора
+    const recipientDoc = await User.findById(recipientObjectId)
+      .select('name age userPhoto isOnline lastSeen city userLocation').lean();
+
+    return res.status(201).json({
+      status: 'pending',
+      conversationId: conversation._id,
+      otherUser: await buildUserCard(recipientDoc),
+    });
+  } catch (e) {
+    console.error('[chat] requestPrivateConversation error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * POST /chats/private/accept/:conversationId — получатель принимает запрос.
+ */
+async function acceptPrivateRequest(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { conversationId } = req.params;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    if (!conversationId || !mongoose.Types.ObjectId.isValid(String(conversationId))) {
+      return res.status(400).json({ message: 'Invalid conversation id' });
+    }
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation || !conversation.isPrivate) {
+      return res.status(404).json({ message: 'Request not found' });
+    }
+    const isParticipant = conversation.participants.some(p => String(p) === String(userId));
+    // Принять может только получатель (не инициатор)
+    if (!isParticipant || String(conversation.initiatorId) === String(userId)) {
+      return res.status(403).json({ message: 'Not allowed' });
+    }
+    if (conversation.status === 'active') {
+      // Уже принято
+      const initiatorDoc = await User.findById(conversation.initiatorId)
+        .select('name age userPhoto isOnline lastSeen city userLocation').lean();
+      return res.status(200).json({ success: true, conversationId: conversation._id, otherUser: await buildUserCard(initiatorDoc) });
+    }
+
+    conversation.status = 'active';
+    await conversation.save();
+    console.log(`[chat] Private request ${conversationId} accepted by ${userId}`);
+
+    // Уведомляем инициатора — теперь чат активен
+    const accepterDoc = await User.findById(userId)
+      .select('name age userPhoto isOnline lastSeen city userLocation').lean();
+    emitToUser(String(conversation.initiatorId), 'private_chat_accepted', {
+      conversationId: conversation._id,
+      otherUser: await buildUserCard(accepterDoc),
+    });
+    ;(async () => {
+      try {
+        await publishNotification({
+          userId: String(conversation.initiatorId),
+          title: accepterDoc?.name || 'Пользователь',
+          body: 'Принял(а) запрос на приватный чат',
+          data: {
+            type: 'private_chat_accepted',
+            conversationId: conversation._id?.toString() || '',
+          },
+        });
+      } catch (err) {
+        console.error('[chat] accept push error:', err.message);
+      }
+    })();
+
+    const initiatorDoc = await User.findById(conversation.initiatorId)
+      .select('name age userPhoto isOnline lastSeen city userLocation').lean();
+    return res.status(200).json({ success: true, conversationId: conversation._id, otherUser: await buildUserCard(initiatorDoc) });
+  } catch (e) {
+    console.error('[chat] acceptPrivateRequest error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * POST /chats/private/decline/:conversationId — получатель отклоняет запрос.
+ * Беседа удаляется; инициатор уведомляется (может запросить снова позже).
+ */
+async function declinePrivateRequest(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { conversationId } = req.params;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    if (!conversationId || !mongoose.Types.ObjectId.isValid(String(conversationId))) {
+      return res.status(400).json({ message: 'Invalid conversation id' });
+    }
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation || !conversation.isPrivate) {
+      return res.status(404).json({ message: 'Request not found' });
+    }
+    const isParticipant = conversation.participants.some(p => String(p) === String(userId));
+    if (!isParticipant || String(conversation.initiatorId) === String(userId)) {
+      return res.status(403).json({ message: 'Not allowed' });
+    }
+    if (conversation.status !== 'pending') {
+      return res.status(400).json({ message: 'Request is not pending' });
+    }
+
+    const initiatorId = String(conversation.initiatorId);
+    await Message.deleteMany({ conversationId: conversation._id });
+    await Conversation.deleteOne({ _id: conversation._id });
+    console.log(`[chat] Private request ${conversationId} declined by ${userId}`);
+
+    emitToUser(initiatorId, 'private_chat_declined', {
+      conversationId: String(conversation._id),
+    });
+    ;(async () => {
+      try {
+        await publishNotification({
+          userId: initiatorId,
+          title: 'Molo',
+          body: 'Запрос на приватный чат отклонён',
+          data: {
+            type: 'private_chat_declined',
+            conversationId: String(conversation._id),
+          },
+        });
+      } catch (err) {
+        console.error('[chat] decline push error:', err.message);
+      }
+    })();
+
+    return res.status(200).json({ success: true });
+  } catch (e) {
+    console.error('[chat] declinePrivateRequest error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * GET /chats/private/requests — входящие ожидающие запросы (для показа при заходе).
+ */
+async function getPrivateRequests(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const pending = await Conversation.find({
+      participants: userObjectId,
+      isPrivate: true,
+      status: 'pending',
+      initiatorId: { $ne: userObjectId },
+      deletedFor: { $ne: userObjectId },
+    }).sort({ createdAt: -1 }).lean();
+
+    const requests = await Promise.all(pending.map(async (conv) => {
+      const initiatorDoc = await User.findById(conv.initiatorId)
+        .select('name age userPhoto isOnline lastSeen city userLocation').lean();
+      return {
+        conversationId: conv._id,
+        initiator: await buildUserCard(initiatorDoc),
+        createdAt: conv.createdAt,
+      };
+    }));
+
+    // Отсекаем запросы от удалённых пользователей
+    return res.status(200).json({ requests: requests.filter(r => r.initiator !== null) });
+  } catch (e) {
+    console.error('[chat] getPrivateRequests error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
 module.exports = {
   getConversations,
   getMessages,
@@ -1221,6 +1545,10 @@ module.exports = {
   startConversation,
   deleteConversations,
   deletePrivateConversations,
+  requestPrivateConversation,
+  acceptPrivateRequest,
+  declinePrivateRequest,
+  getPrivateRequests,
   uploadVoice,
   uploadPhoto,
   registerPushToken,

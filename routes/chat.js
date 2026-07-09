@@ -16,6 +16,10 @@ const {
   startConversation,
   deleteConversations,
   deletePrivateConversations,
+  requestPrivateConversation,
+  acceptPrivateRequest,
+  declinePrivateRequest,
+  getPrivateRequests,
   uploadVoice,
   uploadPhoto,
   registerPushToken,
@@ -139,6 +143,16 @@ router.delete('/chats/all', authRequired, deleteAllChats);
 
 // DELETE /chats/private/all - Удалить все приватные чаты при сбросе E2E ключей
 router.delete('/chats/private/all', authRequired, deletePrivateConversations);
+
+// Приватный чат по согласию: request → accept / decline
+// GET /chats/private/requests — входящие ожидающие запросы
+router.get('/chats/private/requests', authRequired, getPrivateRequests);
+// POST /chats/private/request/:recipientId — отправить запрос
+router.post('/chats/private/request/:recipientId', authRequired, requestPrivateConversation);
+// POST /chats/private/accept/:conversationId — принять
+router.post('/chats/private/accept/:conversationId', authRequired, acceptPrivateRequest);
+// POST /chats/private/decline/:conversationId — отклонить
+router.post('/chats/private/decline/:conversationId', authRequired, declinePrivateRequest);
 
 // Debug push — только для разработки, защищён auth middleware
 router.get('/chats/debug/push/:userId', authRequired, debugPush);
