@@ -270,20 +270,24 @@ function initSocketIO(httpServer) {
 
     // ────────────────────────────────────────────────────────────────
 
-    // Typing indicator
-    socket.on('typing_start', ({ recipientId }) => {
+    // Typing indicator.
+    // isPrivate различает публичный и приватный чат с одним и тем же юзером —
+    // печатание в одном не должно подсвечиваться в другом.
+    socket.on('typing_start', ({ recipientId, isPrivate = false }) => {
       if (!recipientId) return;
       io.to(`user:${String(recipientId)}`).emit('typing', {
         senderId: socket.userId,
         isTyping: true,
+        isPrivate: !!isPrivate,
       });
     });
 
-    socket.on('typing_stop', ({ recipientId }) => {
+    socket.on('typing_stop', ({ recipientId, isPrivate = false }) => {
       if (!recipientId) return;
       io.to(`user:${String(recipientId)}`).emit('typing', {
         senderId: socket.userId,
         isTyping: false,
+        isPrivate: !!isPrivate,
       });
     });
 
