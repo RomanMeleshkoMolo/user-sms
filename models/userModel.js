@@ -14,6 +14,7 @@ const userSchema = new mongoose.Schema({
   publicKey: { type: String, default: null }, // X25519 public key для E2E шифрования (base64)
   premium: { type: Boolean, default: false },
   premiumUntil: { type: Date, default: null },
+  blockedUsers: { type: [mongoose.Schema.Types.ObjectId], default: [] },
 });
 
 const User = authConn.models.User || authConn.model('User', userSchema);

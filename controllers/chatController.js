@@ -10,6 +10,7 @@ const {
 const { publishNotification } = require('../src/notificationPublisher');
 const DeviceToken = require('../models/deviceTokenModel');
 const { emitToUser } = require('../src/socketManager');
+const { moderateChatPhoto, deleteRejectedPhoto } = require('../services/photoModeration');
 
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -311,9 +312,19 @@ async function sendMessage(req, res) {
     const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
     const messageText = text ? text.trim() : '';
 
+    // Блокировка: если получатель заблокировал отправителя (или наоборот) —
+    // сообщение не доставляем. Проверка на сервере, клиентский список — только UI.
+    const recipientDoc = await User.findById(recipientObjectId).select('blockedUsers').lean();
+    const senderBlockCheck = await User.findById(userObjectId).select('blockedUsers premium premiumUntil').lean();
+    const recipientBlockedSender = (recipientDoc?.blockedUsers || []).some(id => String(id) === String(userId));
+    const senderBlockedRecipient = (senderBlockCheck?.blockedUsers || []).some(id => String(id) === String(recipientId));
+    if (recipientBlockedSender || senderBlockedRecipient) {
+      return res.status(403).json({ message: 'Messaging is not available with this user', code: 'BLOCKED' });
+    }
+
     // Не-премиум может отвечать только в чате, который уже существует
     // (т.е. премиум-пользователь написал первым и открыл переписку)
-    const sender = await User.findById(userObjectId).select('premium premiumUntil').lean();
+    const sender = senderBlockCheck;
     const senderIsPremium = sender?.premium && (!sender.premiumUntil || sender.premiumUntil > new Date());
     if (!senderIsPremium) {
       const existingConv = await Conversation.findOne({
@@ -760,6 +771,22 @@ async function uploadPhoto(req, res) {
     }
 
     const photoKey = req.file.key;
+
+    // Модерация Rekognition (зашифрованные E2E-файлы пропускаются — их
+    // невозможно проверить, приватные чаты модерируются через жалобы)
+    const moderation = await moderateChatPhoto({
+      bucket: req.file.bucket,
+      key: photoKey,
+      mimetype: req.file.mimetype,
+    });
+    if (!moderation.allowed) {
+      deleteRejectedPhoto({ bucket: req.file.bucket, key: photoKey });
+      return res.status(422).json({
+        message: 'Photo failed moderation',
+        code: 'PHOTO_REJECTED',
+      });
+    }
+
     const photoUrl = await getPhotoUrl(photoKey);
 
     console.log(`[chat] Photo uploaded by user ${userId}: ${photoKey}`);
