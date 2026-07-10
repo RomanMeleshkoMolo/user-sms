@@ -12,7 +12,7 @@ const DeviceToken = require('../models/deviceTokenModel');
 const { emitToUser } = require('../src/socketManager');
 const { moderateChatPhoto, deleteRejectedPhoto } = require('../services/photoModeration');
 
-const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, GetObjectCommand, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const REGION = process.env.AWS_REGION || 'eu-central-1';
@@ -30,6 +30,30 @@ const s3 = new S3Client({
       }
     : undefined,
 });
+
+// Best-effort удаление медиа-файлов (voice/, chat-photos/) из S3.
+// Вызывается при удалении сообщений/чатов, чтобы не копить сироты в бакете.
+// Не бросает исключений — сбой очистки не должен ломать основной ответ.
+async function deleteMediaKeys(keys) {
+  const clean = [...new Set((keys || []).filter((k) => typeof k === 'string' && k.trim()))];
+  if (clean.length === 0) return { deleted: 0 };
+
+  let deleted = 0;
+  // DeleteObjects принимает до 1000 ключей за запрос
+  for (let i = 0; i < clean.length; i += 1000) {
+    const chunk = clean.slice(i, i + 1000);
+    try {
+      await s3.send(new DeleteObjectsCommand({
+        Bucket: BUCKET,
+        Delete: { Objects: chunk.map((Key) => ({ Key })), Quiet: true },
+      }));
+      deleted += chunk.length;
+    } catch (e) {
+      console.error('[chat] deleteMediaKeys failed for chunk:', e.name, e.message);
+    }
+  }
+  return { deleted };
+}
 
 // In-memory кэш presigned URL: key → { url, expiresAt }
 // Ограничен по размеру, иначе Map растёт неограниченно при долгой работе процесса.
@@ -720,6 +744,22 @@ async function deleteConversations(req, res) {
       notifyMap[conv._id.toString()] = others;
     });
 
+    // Собираем S3-ключи медиа (голосовые + фото) до удаления сообщений,
+    // чтобы затем удалить сами файлы из бакета и не плодить сироты.
+    const mediaMessages = await Message.find({
+      conversationId: { $in: validConversationIds },
+      $or: [
+        { voiceKey: { $exists: true, $nin: [null, ''] } },
+        { photoKey: { $exists: true, $nin: [null, ''] } },
+      ],
+    }).select('voiceKey photoKey').lean();
+
+    const mediaKeys = [];
+    mediaMessages.forEach((m) => {
+      if (m.voiceKey) mediaKeys.push(m.voiceKey);
+      if (m.photoKey) mediaKeys.push(m.photoKey);
+    });
+
     // Удаляем сообщения из этих чатов
     await Message.deleteMany({
       conversationId: { $in: validConversationIds },
@@ -729,6 +769,13 @@ async function deleteConversations(req, res) {
     await Conversation.deleteMany({
       _id: { $in: validConversationIds },
     });
+
+    // Чистим медиа-файлы из S3 (best-effort, не блокируем ответ)
+    if (mediaKeys.length > 0) {
+      deleteMediaKeys(mediaKeys)
+        .then((r) => console.log(`[chat] deleteConversations: removed ${r.deleted}/${mediaKeys.length} media files from S3`))
+        .catch((e) => console.error('[chat] deleteConversations S3 cleanup error:', e.message));
+    }
 
     // Уведомляем других участников через Socket.IO
     Object.entries(notifyMap).forEach(([convId, otherIds]) => {
@@ -1141,6 +1188,18 @@ async function deleteMessage(req, res) {
 
     await message.save();
     console.log(`[chat] deleteMessage ${messageId} deleteFor=${deleteFor} by userId=${userId}`);
+
+    // При удалении "у всех" сообщение скрыто для обоих → медиа-файл больше не нужен.
+    // Для deleteFor='me' файл НЕ трогаем: второй участник его ещё видит.
+    if (deleteFor === 'all') {
+      const keys = [];
+      if (message.voiceKey) keys.push(message.voiceKey);
+      if (message.photoKey) keys.push(message.photoKey);
+      if (keys.length > 0) {
+        deleteMediaKeys(keys)
+          .catch((e) => console.error('[chat] deleteMessage S3 cleanup error:', e.message));
+      }
+    }
 
     // Real-time: уведомляем второго участника через Socket.IO
     if (deleteFor === 'all') {
