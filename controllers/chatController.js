@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Conversation = require('../models/conversationModel');
 const Message = require('../models/messageModel');
 const User = require('../models/userModel');
+const { isPremiumActive } = require('../utils/premium');
 const {
   sendPushToUser,
   registerDeviceToken,
@@ -620,8 +621,8 @@ async function startConversation(req, res) {
     }
 
     if (isPrivate) {
-      const currentUser = await User.findById(userId).select('premium').lean();
-      if (!currentUser?.premium) {
+      const currentUser = await User.findById(userId).select('premiumUntil').lean();
+      if (!isPremiumActive(currentUser)) {
         return res.status(403).json({ message: 'Premium required' });
       }
     }
