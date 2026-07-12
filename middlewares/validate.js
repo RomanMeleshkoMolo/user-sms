@@ -18,13 +18,19 @@ const schemas = {
     // text обязателен только для текстовых/системных; voice и image несут
     // содержимое в своих полях (voiceUrl/photoUrl)
     text: Joi.string().max(5000).allow('', null).when('messageType', {
-      is: Joi.string().valid('voice', 'image'),
+      is: Joi.string().valid('voice', 'image', 'sticker'),
       then: Joi.optional(),
       otherwise: Joi.required(),
     }),
     nonce: Joi.string().max(500).allow(null),
     // messageType: тип 'image' (как в модели и на клиенте), не 'photo'
-    messageType: Joi.string().valid('text', 'voice', 'image', 'system').default('text'),
+    messageType: Joi.string().valid('text', 'voice', 'image', 'sticker', 'system').default('text'),
+    // Стикер — id пресета из клиентского каталога
+    sticker: Joi.string().max(64).when('messageType', {
+      is: 'sticker',
+      then: Joi.required(),
+      otherwise: Joi.optional().allow(null),
+    }),
     // replyTo может быть null (обычное сообщение без ответа) — клиент всегда шлёт поле
     replyTo: Joi.object({
       _id: Joi.string(),

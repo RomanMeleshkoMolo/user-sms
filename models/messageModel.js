@@ -27,8 +27,15 @@ const messageSchema = new mongoose.Schema({
   // Тип сообщения
   messageType: {
     type: String,
-    enum: ['text', 'voice', 'image'],
+    enum: ['text', 'voice', 'image', 'sticker'],
     default: 'text',
+  },
+
+  // ID стикера из клиентского каталога (напр. 'rom_bigheart'). Не E2E: это не
+  // пользовательский текст, а идентификатор пресета — как эмодзи.
+  sticker: {
+    type: String,
+    default: null,
   },
 
   // Текст сообщения
