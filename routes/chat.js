@@ -12,6 +12,7 @@ const {
   getConversations,
   getMessages,
   sendMessage,
+  getStickerPacks,
   markAsRead,
   startConversation,
   deleteConversations,
@@ -70,6 +71,10 @@ const voiceUpload = multer({
 
 // GET /chats - Получить список всех чатов пользователя
 router.get('/chats', authRequired, getConversations);
+
+// GET /chats/stickerpacks - Каталог стикерпаков для пикера
+// (статичный путь ДО параметрических /chats/:recipientId/*)
+router.get('/chats/stickerpacks', authRequired, getStickerPacks);
 
 // GET /chats/start/:recipientId - Начать/получить чат с пользователем
 router.get('/chats/start/:recipientId', authRequired, startConversation);

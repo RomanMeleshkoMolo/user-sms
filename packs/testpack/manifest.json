@@ -1,0 +1,14 @@
+{
+  "packId": "testpack",
+  "name": "Тестовый пак",
+  "tabEmoji": "🧪",
+  "order": 999,
+  "isPremium": false,
+  "published": true,
+  "stickers": [
+    { "id": "testpack_smile", "file": "smile.webp", "caption": "Улыбка", "width": 512, "height": 512 },
+    { "id": "testpack_heart", "file": "heart.webp", "caption": "Сердце", "width": 512, "height": 512 },
+    { "id": "testpack_star",  "file": "star.webp",  "caption": "Звезда", "width": 512, "height": 512 },
+    { "id": "testpack_cool",  "file": "cool.webp",  "caption": "Круто",  "width": 512, "height": 512 }
+  ]
+}

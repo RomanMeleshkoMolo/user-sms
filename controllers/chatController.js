@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Conversation = require('../models/conversationModel');
 const Message = require('../models/messageModel');
 const User = require('../models/userModel');
+const StickerPack = require('../models/stickerPackModel');
 const { isPremiumActive } = require('../utils/premium');
 const {
   sendPushToUser,
@@ -19,6 +20,11 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const REGION = process.env.AWS_REGION || 'eu-central-1';
 const BUCKET = process.env.S3_BUCKET || 'molo-user-photos';
 const PRESIGNED_TTL_SEC = Number(process.env.S3_GET_TTL_SEC || 3600);
+// Публичная база для картинок стикеров (CDN / public-read префикс stickers/).
+// В отличие от фото/голоса стикеры не приватны и не E2E — раздаём статичным URL
+// с длинным кешем, без presign на каждый запрос.
+const STICKER_PUBLIC_BASE = process.env.STICKER_PUBLIC_BASE
+  || `https://${BUCKET}.s3.${REGION}.amazonaws.com`;
 // Кэшируем на 50 минут (URL действителен 60 мин — берём с запасом)
 const PRESIGNED_CACHE_TTL_MS = 50 * 60 * 1000;
 
@@ -370,6 +376,22 @@ async function sendMessage(req, res) {
       }).select('_id').lean();
       if (!existingConv) {
         return res.status(403).json({ message: 'Premium required to start a conversation', code: 'PREMIUM_REQUIRED' });
+      }
+    }
+
+    // Стикер-гейт: существование стикера + платные паки только премиуму.
+    // Проверка на сервере — клиентский замочек обходится. isPremiumActive
+    // (по premiumUntil) — источник правды, а не легаси-флаг sender.premium.
+    if (messageType === 'sticker') {
+      const pack = await StickerPack.findOne(
+        { 'stickers.id': sticker, published: true },
+        { isPremium: 1 }
+      ).lean();
+      if (!pack) {
+        return res.status(400).json({ message: 'Unknown sticker', code: 'UNKNOWN_STICKER' });
+      }
+      if (pack.isPremium && !isPremiumActive(sender)) {
+        return res.status(403).json({ message: 'Premium required for this sticker pack', code: 'PREMIUM_STICKER' });
       }
     }
 
@@ -1609,10 +1631,44 @@ async function getPrivateRequests(req, res) {
   }
 }
 
+// GET /chats/stickerpacks — каталог опубликованных паков для пикера.
+// Ключи S3 разворачиваются в публичные URL. `version` пака клиент
+// использует для инвалидации локального кеша манифеста.
+async function getStickerPacks(req, res) {
+  try {
+    const packs = await StickerPack.find({ published: true })
+      .sort({ order: 1 })
+      .lean();
+
+    const payload = packs.map((p) => ({
+      packId: p.packId,
+      name: p.name,
+      tabEmoji: p.tabEmoji,
+      isPremium: p.isPremium,
+      version: p.version,
+      stickers: (p.stickers || []).map((s) => ({
+        id: s.id,
+        // ?v=version инвалидирует immutable-кеш клиента при обновлении арта пака
+        // (S3-ключ стабилен, поэтому без версии старая картинка кешируется навсегда)
+        url: `${STICKER_PUBLIC_BASE}/${s.key}?v=${p.version || 1}`,
+        caption: s.caption,
+        width: s.width,
+        height: s.height,
+      })),
+    }));
+
+    res.json({ packs: payload });
+  } catch (e) {
+    console.error('[chat] getStickerPacks error:', e);
+    res.status(500).json({ message: 'Failed to load sticker packs' });
+  }
+}
+
 module.exports = {
   getConversations,
   getMessages,
   sendMessage,
+  getStickerPacks,
   markAsRead,
   startConversation,
   deleteConversations,
