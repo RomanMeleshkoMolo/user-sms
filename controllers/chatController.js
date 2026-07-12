@@ -317,7 +317,7 @@ async function sendMessage(req, res) {
   try {
     const userId = getReqUserId(req);
     const { recipientId } = req.params;
-    const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, voiceWaveform = null, nonce = null, photoUrl, photoKey, photoNonce = null, isPrivate = false } = req.body;
+    const { text, replyTo, messageType = 'text', voiceUrl, voiceKey, voiceDuration, voiceNonce = null, voiceWaveform = null, nonce = null, photoUrl, photoKey, photoNonce = null, sticker = null, isPrivate = false } = req.body;
 
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -339,6 +339,10 @@ async function sendMessage(req, res) {
     } else if (messageType === 'image') {
       if (!photoUrl) {
         return res.status(400).json({ message: 'Photo URL is required' });
+      }
+    } else if (messageType === 'sticker') {
+      if (!sticker || typeof sticker !== 'string' || sticker.length > 64) {
+        return res.status(400).json({ message: 'Valid sticker id is required' });
       }
     }
 
@@ -426,11 +430,13 @@ async function sendMessage(req, res) {
         ? '🎤 Голосовое сообщение'
         : messageType === 'image'
           ? '📷 Фото'
-          : (nonce ? 'Новое сообщение' : messageText);
+          : messageType === 'sticker'
+            ? '🎁 Стикер'
+            : (nonce ? 'Новое сообщение' : messageText);
 
     // Данные для lastMessage: для E2E храним шифртекст + nonce, чтобы клиент мог расшифровать
     const lastMessageData = {
-      text: messageType === 'voice' ? '🎤 Голосовое сообщение' : messageType === 'image' ? '📷 Фото' : messageText,
+      text: messageType === 'voice' ? '🎤 Голосовое сообщение' : messageType === 'image' ? '📷 Фото' : messageType === 'sticker' ? '🎁 Стикер' : messageText,
       nonce: messageType === 'text' ? (nonce || null) : null,
       senderId: userObjectId,
       createdAt: new Date(),
@@ -475,6 +481,11 @@ async function sendMessage(req, res) {
       messageData.photoNonce = photoNonce || null;
     }
 
+    // Стикер — сохраняем id пресета
+    if (messageType === 'sticker') {
+      messageData.sticker = sticker;
+    }
+
     const message = await Message.create(messageData);
 
     // Обновляем беседу
@@ -503,6 +514,7 @@ async function sendMessage(req, res) {
       photoUrl: message.photoUrl || null,
       photoKey: message.photoKey || null,
       photoNonce: message.photoNonce || null,
+      sticker: message.sticker || null,
       replyTo: message.replyTo || null,
       isRead: message.isRead,
       createdAt: message.createdAt,
