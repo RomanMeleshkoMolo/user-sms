@@ -1,0 +1,94 @@
+{
+  "packId": "animals",
+  "name": "Животные",
+  "tabEmoji": "🐾",
+  "order": 70,
+  "isPremium": false,
+  "published": true,
+  "stickers": [
+    {
+      "id": "animals_fox",
+      "file": "fox.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_koala",
+      "file": "koala.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_tiger",
+      "file": "tiger.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_lion",
+      "file": "lion.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_cow",
+      "file": "cow.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_pig",
+      "file": "pig.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_frog",
+      "file": "frog.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_monkey",
+      "file": "monkey.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_hamster",
+      "file": "hamster.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_owl",
+      "file": "owl.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_bee",
+      "file": "bee.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "animals_butterfly",
+      "file": "butterfly.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    }
+  ]
+}

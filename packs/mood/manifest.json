@@ -1,0 +1,94 @@
+{
+  "packId": "mood",
+  "name": "Эмоции",
+  "tabEmoji": "😎",
+  "order": 30,
+  "isPremium": false,
+  "published": true,
+  "stickers": [
+    {
+      "id": "mood_laugh",
+      "file": "laugh.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_fire",
+      "file": "fire.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_cool",
+      "file": "cool.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_party",
+      "file": "party.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_cry",
+      "file": "cry.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_think",
+      "file": "think.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_wow",
+      "file": "wow.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_sleepy",
+      "file": "sleepy.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_wink",
+      "file": "wink.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_shy",
+      "file": "shy.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_hundred",
+      "file": "hundred.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "mood_clap",
+      "file": "clap.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    }
+  ]
+}

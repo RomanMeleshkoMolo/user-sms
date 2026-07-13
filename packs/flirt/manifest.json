@@ -1,0 +1,66 @@
+{
+  "packId": "flirt",
+  "name": "Флирт",
+  "tabEmoji": "😏",
+  "order": 40,
+  "isPremium": true,
+  "published": true,
+  "stickers": [
+    {
+      "id": "flirt_smirk",
+      "file": "smirk.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "flirt_kissmark",
+      "file": "kissmark.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "flirt_wink",
+      "file": "wink.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "flirt_hearteyes",
+      "file": "hearteyes.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "flirt_devil",
+      "file": "devil.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "flirt_rose",
+      "file": "rose.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "flirt_fire",
+      "file": "fire.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "flirt_eyes",
+      "file": "eyes.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    }
+  ]
+}

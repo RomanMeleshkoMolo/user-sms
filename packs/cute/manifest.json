@@ -1,0 +1,80 @@
+{
+  "packId": "cute",
+  "name": "Милашки",
+  "tabEmoji": "🐻",
+  "order": 50,
+  "isPremium": false,
+  "published": true,
+  "stickers": [
+    {
+      "id": "cute_bear",
+      "file": "bear.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "cute_cat",
+      "file": "cat.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "cute_bunny",
+      "file": "bunny.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "cute_dog",
+      "file": "dog.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "cute_panda",
+      "file": "panda.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "cute_unicorn",
+      "file": "unicorn.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "cute_rainbow",
+      "file": "rainbow.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "cute_star",
+      "file": "star.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "cute_flower",
+      "file": "flower.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "cute_penguin",
+      "file": "penguin.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    }
+  ]
+}
