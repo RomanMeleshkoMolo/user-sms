@@ -1,0 +1,66 @@
+{
+  "packId": "greeting",
+  "name": "Приветы",
+  "tabEmoji": "👋",
+  "order": 20,
+  "isPremium": false,
+  "published": true,
+  "stickers": [
+    {
+      "id": "greeting_wave",
+      "file": "wave.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "greeting_heart",
+      "file": "heart.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "greeting_hug",
+      "file": "hug.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "greeting_morning",
+      "file": "morning.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "greeting_night",
+      "file": "night.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "greeting_missyou",
+      "file": "missyou.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "greeting_smile",
+      "file": "smile.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "greeting_coffee",
+      "file": "coffee.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    }
+  ]
+}

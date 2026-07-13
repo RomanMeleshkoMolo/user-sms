@@ -1,0 +1,66 @@
+{
+  "packId": "party",
+  "name": "Тусовка",
+  "tabEmoji": "🎉",
+  "order": 60,
+  "isPremium": false,
+  "published": true,
+  "stickers": [
+    {
+      "id": "party_tada",
+      "file": "tada.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "party_cheers",
+      "file": "cheers.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "party_beer",
+      "file": "beer.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "party_dance",
+      "file": "dance.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "party_music",
+      "file": "music.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "party_balloon",
+      "file": "balloon.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "party_cake",
+      "file": "cake.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "party_sparkles",
+      "file": "sparkles.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    }
+  ]
+}

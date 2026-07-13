@@ -1,0 +1,94 @@
+{
+  "packId": "food",
+  "name": "Еда",
+  "tabEmoji": "🍕",
+  "order": 80,
+  "isPremium": false,
+  "published": true,
+  "stickers": [
+    {
+      "id": "food_pizza",
+      "file": "pizza.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_burger",
+      "file": "burger.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_fries",
+      "file": "fries.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_taco",
+      "file": "taco.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_sushi",
+      "file": "sushi.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_donut",
+      "file": "donut.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_icecream",
+      "file": "icecream.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_cake",
+      "file": "cake.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_strawberry",
+      "file": "strawberry.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_cherry",
+      "file": "cherry.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_cookie",
+      "file": "cookie.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "food_choco",
+      "file": "choco.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    }
+  ]
+}
