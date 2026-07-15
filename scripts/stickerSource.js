@@ -13,28 +13,15 @@
  * Подписи под стикерами НЕ используются (в пикере/чате не рендерятся).
  *
  * order задаёт позицию вкладки в пикере (меньше = левее). Премиум-пак(и)
- * специально стоят в середине ряда, чтобы выделяться (короной + размером).
+ * специально стоят в СЕРЕДИНЕ ряда, чтобы выделяться (короной + размером).
+ *
+ * Премиум-пак «Сердечки» (packId 'romantic'): только чистые сердечки, стоит по
+ * центру. Кастомные эксклюзив-стикеры (арт-файлы .webp) добавляются в него
+ * отдельно — доложить в packs/romantic/ + записи в manifest перед заливкой.
  */
 module.exports = [
   {
-    packId: 'romantic', name: 'Романтика', tabEmoji: '❤️', order: 10, isPremium: false,
-    stickers: [
-      { name: 'bigheart',   emoji: '❤️' },
-      { name: 'hearts',     emoji: '💕' },
-      { name: 'love',       emoji: '😍' },
-      { name: 'blush',      emoji: '🥰' },
-      { name: 'kiss',       emoji: '😘' },
-      { name: 'rose',       emoji: '🌹' },
-      { name: 'cupid',      emoji: '💘' },
-      { name: 'handheart',  emoji: '🫶' },
-      { name: 'loveletter', emoji: '💌' },
-      { name: 'sparkle',    emoji: '💖' },
-      { name: 'revolving',  emoji: '💞' },
-      { name: 'gift',       emoji: '🎁' },
-    ],
-  },
-  {
-    packId: 'greeting', name: 'Приветы', tabEmoji: '👋', order: 20, isPremium: false,
+    packId: 'greeting', name: 'Приветы', tabEmoji: '👋', order: 10, isPremium: false,
     stickers: [
       { name: 'wave',    emoji: '👋' },
       { name: 'heart',   emoji: '💛' },
@@ -47,7 +34,7 @@ module.exports = [
     ],
   },
   {
-    packId: 'mood', name: 'Эмоции', tabEmoji: '😎', order: 30, isPremium: false,
+    packId: 'mood', name: 'Эмоции', tabEmoji: '😎', order: 20, isPremium: false,
     stickers: [
       { name: 'laugh',  emoji: '😂' },
       { name: 'fire',   emoji: '🔥' },
@@ -64,17 +51,36 @@ module.exports = [
     ],
   },
   {
-    // ПРЕМИУМ — стоит в середине ряда вкладок (выделяется короной + размером).
-    packId: 'flirt', name: 'Флирт', tabEmoji: '😏', order: 40, isPremium: true,
+    // Бесплатный (был премиум). Принял смайлы-с-сердцами из бывшей «Романтики».
+    packId: 'flirt', name: 'Флирт', tabEmoji: '😏', order: 30, isPremium: false,
     stickers: [
       { name: 'smirk',    emoji: '😏' },
       { name: 'kissmark', emoji: '💋' },
       { name: 'wink',     emoji: '😜' },
       { name: 'hearteyes',emoji: '😍' },
+      { name: 'kiss',     emoji: '😘' },
+      { name: 'blush',    emoji: '🥰' },
       { name: 'devil',    emoji: '😈' },
       { name: 'rose',     emoji: '🥀' },
+      { name: 'redrose',  emoji: '🌹' },
       { name: 'fire',     emoji: '🔥' },
       { name: 'eyes',     emoji: '👀' },
+    ],
+  },
+  {
+    // ПРЕМИУМ «Сердечки» — по центру ряда вкладок (корона + размер), иконка ❤️.
+    // Только чистые сердечки. Сюда же докладываются кастомные эксклюзив-стикеры.
+    packId: 'romantic', name: 'Сердечки', tabEmoji: '❤️', order: 40, isPremium: true,
+    stickers: [
+      { name: 'bigheart',   emoji: '❤️' },
+      { name: 'hearts',     emoji: '💕' },
+      { name: 'cupid',      emoji: '💘' },
+      { name: 'handheart',  emoji: '🫶' },
+      { name: 'loveletter', emoji: '💌' },
+      { name: 'sparkle',    emoji: '💖' },
+      { name: 'revolving',  emoji: '💞' },
+      { name: 'growing',    emoji: '💗' },
+      { name: 'gift_heart', emoji: '💝' },
     ],
   },
   {
@@ -93,21 +99,7 @@ module.exports = [
     ],
   },
   {
-    packId: 'party', name: 'Тусовка', tabEmoji: '🎉', order: 60, isPremium: false,
-    stickers: [
-      { name: 'tada',    emoji: '🎉' },
-      { name: 'cheers',  emoji: '🥂' },
-      { name: 'beer',    emoji: '🍻' },
-      { name: 'dance',   emoji: '💃' },
-      { name: 'music',   emoji: '🎶' },
-      { name: 'balloon', emoji: '🎈' },
-      { name: 'cake',    emoji: '🎂' },
-      { name: 'sparkles',emoji: '✨' },
-    ],
-  },
-  {
-    // NEW бесплатный
-    packId: 'animals', name: 'Животные', tabEmoji: '🐾', order: 70, isPremium: false,
+    packId: 'animals', name: 'Животные', tabEmoji: '🐾', order: 60, isPremium: false,
     stickers: [
       { name: 'fox',       emoji: '🦊' },
       { name: 'koala',     emoji: '🐨' },
@@ -124,8 +116,7 @@ module.exports = [
     ],
   },
   {
-    // NEW бесплатный
-    packId: 'food', name: 'Еда', tabEmoji: '🍕', order: 80, isPremium: false,
+    packId: 'food', name: 'Еда', tabEmoji: '🍕', order: 70, isPremium: false,
     stickers: [
       { name: 'pizza',      emoji: '🍕' },
       { name: 'burger',     emoji: '🍔' },

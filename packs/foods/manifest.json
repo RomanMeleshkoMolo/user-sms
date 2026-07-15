@@ -1,0 +1,94 @@
+{
+  "packId": "foods",
+  "name": "Вкусняшки",
+  "tabEmoji": "🍔",
+  "order": 49,
+  "isPremium": true,
+  "published": true,
+  "stickers": [
+    {
+      "id": "foods_f01",
+      "file": "f01.webp"
+    },
+    {
+      "id": "foods_f02",
+      "file": "f02.webp"
+    },
+    {
+      "id": "foods_f03",
+      "file": "f03.webp"
+    },
+    {
+      "id": "foods_f04",
+      "file": "f04.webp"
+    },
+    {
+      "id": "foods_f05",
+      "file": "f05.webp"
+    },
+    {
+      "id": "foods_f06",
+      "file": "f06.webp"
+    },
+    {
+      "id": "foods_f07",
+      "file": "f07.webp"
+    },
+    {
+      "id": "foods_f08",
+      "file": "f08.webp"
+    },
+    {
+      "id": "foods_f09",
+      "file": "f09.webp"
+    },
+    {
+      "id": "foods_f10",
+      "file": "f10.webp"
+    },
+    {
+      "id": "foods_f11",
+      "file": "f11.webp"
+    },
+    {
+      "id": "foods_f12",
+      "file": "f12.webp"
+    },
+    {
+      "id": "foods_f13",
+      "file": "f13.webp"
+    },
+    {
+      "id": "foods_f14",
+      "file": "f14.webp"
+    },
+    {
+      "id": "foods_f15",
+      "file": "f15.webp"
+    },
+    {
+      "id": "foods_f16",
+      "file": "f16.webp"
+    },
+    {
+      "id": "foods_f17",
+      "file": "f17.webp"
+    },
+    {
+      "id": "foods_f18",
+      "file": "f18.webp"
+    },
+    {
+      "id": "foods_f19",
+      "file": "f19.webp"
+    },
+    {
+      "id": "foods_f20",
+      "file": "f20.webp"
+    },
+    {
+      "id": "foods_f21",
+      "file": "f21.webp"
+    }
+  ]
+}
