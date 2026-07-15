@@ -2,8 +2,8 @@
   "packId": "flirt",
   "name": "Флирт",
   "tabEmoji": "😏",
-  "order": 40,
-  "isPremium": true,
+  "order": 30,
+  "isPremium": false,
   "published": true,
   "stickers": [
     {
@@ -35,6 +35,20 @@
       "height": 512
     },
     {
+      "id": "flirt_kiss",
+      "file": "kiss.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "flirt_blush",
+      "file": "blush.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
       "id": "flirt_devil",
       "file": "devil.webp",
       "caption": null,
@@ -44,6 +58,13 @@
     {
       "id": "flirt_rose",
       "file": "rose.webp",
+      "caption": null,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "flirt_redrose",
+      "file": "redrose.webp",
       "caption": null,
       "width": 512,
       "height": 512

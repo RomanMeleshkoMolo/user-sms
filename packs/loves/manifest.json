@@ -1,0 +1,90 @@
+{
+  "packId": "loves",
+  "name": "Любовь",
+  "tabEmoji": "💕",
+  "order": 48,
+  "isPremium": true,
+  "published": true,
+  "stickers": [
+    {
+      "id": "loves_l01",
+      "file": "l01.webp"
+    },
+    {
+      "id": "loves_l02",
+      "file": "l02.webp"
+    },
+    {
+      "id": "loves_l03",
+      "file": "l03.webp"
+    },
+    {
+      "id": "loves_l04",
+      "file": "l04.webp"
+    },
+    {
+      "id": "loves_l05",
+      "file": "l05.webp"
+    },
+    {
+      "id": "loves_l06",
+      "file": "l06.webp"
+    },
+    {
+      "id": "loves_l07",
+      "file": "l07.webp"
+    },
+    {
+      "id": "loves_l08",
+      "file": "l08.webp"
+    },
+    {
+      "id": "loves_l09",
+      "file": "l09.webp"
+    },
+    {
+      "id": "loves_l10",
+      "file": "l10.webp"
+    },
+    {
+      "id": "loves_l11",
+      "file": "l11.webp"
+    },
+    {
+      "id": "loves_l12",
+      "file": "l12.webp"
+    },
+    {
+      "id": "loves_l13",
+      "file": "l13.webp"
+    },
+    {
+      "id": "loves_l14",
+      "file": "l14.webp"
+    },
+    {
+      "id": "loves_l15",
+      "file": "l15.webp"
+    },
+    {
+      "id": "loves_l16",
+      "file": "l16.webp"
+    },
+    {
+      "id": "loves_l17",
+      "file": "l17.webp"
+    },
+    {
+      "id": "loves_l18",
+      "file": "l18.webp"
+    },
+    {
+      "id": "loves_l19",
+      "file": "l19.webp"
+    },
+    {
+      "id": "loves_l20",
+      "file": "l20.webp"
+    }
+  ]
+}

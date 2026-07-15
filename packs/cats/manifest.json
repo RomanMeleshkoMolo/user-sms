@@ -1,0 +1,90 @@
+{
+  "packId": "cats",
+  "name": "Котики",
+  "tabEmoji": "🐱",
+  "order": 45,
+  "isPremium": true,
+  "published": true,
+  "stickers": [
+    {
+      "id": "cats_cat01",
+      "file": "cat01.webp"
+    },
+    {
+      "id": "cats_cat02",
+      "file": "cat02.webp"
+    },
+    {
+      "id": "cats_cat03",
+      "file": "cat03.webp"
+    },
+    {
+      "id": "cats_cat04",
+      "file": "cat04.webp"
+    },
+    {
+      "id": "cats_cat05",
+      "file": "cat05.webp"
+    },
+    {
+      "id": "cats_cat06",
+      "file": "cat06.webp"
+    },
+    {
+      "id": "cats_cat07",
+      "file": "cat07.webp"
+    },
+    {
+      "id": "cats_cat08",
+      "file": "cat08.webp"
+    },
+    {
+      "id": "cats_cat09",
+      "file": "cat09.webp"
+    },
+    {
+      "id": "cats_cat10",
+      "file": "cat10.webp"
+    },
+    {
+      "id": "cats_cat11",
+      "file": "cat11.webp"
+    },
+    {
+      "id": "cats_cat12",
+      "file": "cat12.webp"
+    },
+    {
+      "id": "cats_cat13",
+      "file": "cat13.webp"
+    },
+    {
+      "id": "cats_cat14",
+      "file": "cat14.webp"
+    },
+    {
+      "id": "cats_cat15",
+      "file": "cat15.webp"
+    },
+    {
+      "id": "cats_cat16",
+      "file": "cat16.webp"
+    },
+    {
+      "id": "cats_cat17",
+      "file": "cat17.webp"
+    },
+    {
+      "id": "cats_cat18",
+      "file": "cat18.webp"
+    },
+    {
+      "id": "cats_cat19",
+      "file": "cat19.webp"
+    },
+    {
+      "id": "cats_cat20",
+      "file": "cat20.webp"
+    }
+  ]
+}

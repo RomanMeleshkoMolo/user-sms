@@ -1,94 +1,90 @@
 {
   "packId": "romantic",
-  "name": "Романтика",
+  "name": "Сердечки",
   "tabEmoji": "❤️",
-  "order": 10,
-  "isPremium": false,
+  "order": 40,
+  "isPremium": true,
   "published": true,
   "stickers": [
     {
-      "id": "romantic_bigheart",
-      "file": "bigheart.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "id": "romantic_inlove",
+      "file": "inlove.webp"
     },
     {
-      "id": "romantic_hearts",
-      "file": "hearts.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
-    },
-    {
-      "id": "romantic_love",
-      "file": "love.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
-    },
-    {
-      "id": "romantic_blush",
-      "file": "blush.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "id": "romantic_hearteyes",
+      "file": "hearteyes.webp"
     },
     {
       "id": "romantic_kiss",
-      "file": "kiss.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "file": "kiss.webp"
     },
     {
-      "id": "romantic_rose",
-      "file": "rose.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "id": "romantic_kissing",
+      "file": "kissing.webp"
     },
     {
-      "id": "romantic_cupid",
-      "file": "cupid.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "id": "romantic_kissinggirl",
+      "file": "kissinggirl.webp"
     },
     {
-      "id": "romantic_handheart",
-      "file": "handheart.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "id": "romantic_holdinghands",
+      "file": "holdinghands.webp"
     },
     {
-      "id": "romantic_loveletter",
-      "file": "loveletter.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "id": "romantic_wine",
+      "file": "wine.webp"
     },
     {
-      "id": "romantic_sparkle",
-      "file": "sparkle.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "id": "romantic_happy",
+      "file": "happy.webp"
     },
     {
-      "id": "romantic_revolving",
-      "file": "revolving.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "id": "romantic_smile",
+      "file": "smile.webp"
     },
     {
-      "id": "romantic_gift",
-      "file": "gift.webp",
-      "caption": null,
-      "width": 512,
-      "height": 512
+      "id": "romantic_satisfied",
+      "file": "satisfied.webp"
+    },
+    {
+      "id": "romantic_cool",
+      "file": "cool.webp"
+    },
+    {
+      "id": "romantic_wink",
+      "file": "wink.webp"
+    },
+    {
+      "id": "romantic_embarrased",
+      "file": "embarrased.webp"
+    },
+    {
+      "id": "romantic_suspicion",
+      "file": "suspicion.webp"
+    },
+    {
+      "id": "romantic_grouchy",
+      "file": "grouchy.webp"
+    },
+    {
+      "id": "romantic_cry",
+      "file": "cry.webp"
+    },
+    {
+      "id": "romantic_sleep",
+      "file": "sleep.webp"
+    },
+    {
+      "id": "romantic_mask",
+      "file": "mask.webp"
+    },
+    {
+      "id": "romantic_distance",
+      "file": "distance.webp"
+    },
+    {
+      "id": "romantic_dead",
+      "file": "dead.webp"
     }
   ]
 }

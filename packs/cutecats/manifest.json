@@ -1,0 +1,94 @@
+{
+  "packId": "cutecats",
+  "name": "Милые котики",
+  "tabEmoji": "😻",
+  "order": 47,
+  "isPremium": true,
+  "published": true,
+  "stickers": [
+    {
+      "id": "cutecats_c01",
+      "file": "c01.webp"
+    },
+    {
+      "id": "cutecats_c02",
+      "file": "c02.webp"
+    },
+    {
+      "id": "cutecats_c03",
+      "file": "c03.webp"
+    },
+    {
+      "id": "cutecats_c04",
+      "file": "c04.webp"
+    },
+    {
+      "id": "cutecats_c05",
+      "file": "c05.webp"
+    },
+    {
+      "id": "cutecats_c06",
+      "file": "c06.webp"
+    },
+    {
+      "id": "cutecats_c07",
+      "file": "c07.webp"
+    },
+    {
+      "id": "cutecats_c08",
+      "file": "c08.webp"
+    },
+    {
+      "id": "cutecats_c09",
+      "file": "c09.webp"
+    },
+    {
+      "id": "cutecats_c10",
+      "file": "c10.webp"
+    },
+    {
+      "id": "cutecats_c11",
+      "file": "c11.webp"
+    },
+    {
+      "id": "cutecats_c12",
+      "file": "c12.webp"
+    },
+    {
+      "id": "cutecats_c13",
+      "file": "c13.webp"
+    },
+    {
+      "id": "cutecats_c14",
+      "file": "c14.webp"
+    },
+    {
+      "id": "cutecats_c15",
+      "file": "c15.webp"
+    },
+    {
+      "id": "cutecats_c16",
+      "file": "c16.webp"
+    },
+    {
+      "id": "cutecats_c17",
+      "file": "c17.webp"
+    },
+    {
+      "id": "cutecats_c18",
+      "file": "c18.webp"
+    },
+    {
+      "id": "cutecats_c19",
+      "file": "c19.webp"
+    },
+    {
+      "id": "cutecats_c20",
+      "file": "c20.webp"
+    },
+    {
+      "id": "cutecats_c21",
+      "file": "c21.webp"
+    }
+  ]
+}
