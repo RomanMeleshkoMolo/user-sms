@@ -17,6 +17,10 @@ const { moderateChatPhoto, deleteRejectedPhoto } = require('../services/photoMod
 const { S3Client, GetObjectCommand, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
+// Сколько чатов пользователь может закрепить вверху списка. Дублируется на
+// клиенте (MAX_PINNED в Chats.js) — менять надо в обоих местах.
+const MAX_PINNED_CONVERSATIONS = 10;
+
 const REGION = process.env.AWS_REGION || 'eu-central-1';
 const BUCKET = process.env.S3_BUCKET || 'molo-user-photos';
 const PRESIGNED_TTL_SEC = Number(process.env.S3_GET_TTL_SEC || 3600);
@@ -124,18 +128,24 @@ async function getConversations(req, res) {
     // Входящие приватные ЗАПРОСЫ (pending, инициированы собеседником) в списке
     // не показываем — они приходят получателю отдельной модалкой-запросом.
     // Исходящие pending (инициатор — я) показываем как «ожидает».
-    const conversations = await Conversation.find({
-      participants: userObjectId,
-      deletedFor: { $ne: userObjectId },
-      $or: [
-        { status: { $ne: 'pending' } },
-        { initiatorId: userObjectId },
-      ],
-    })
-      .sort({ updatedAt: -1 })
-      .skip(skip)
-      .limit(limit + 1)
-      .lean();
+    // Закреплённые идут первыми: isPinned вычисляем на стороне Mongo, иначе при
+    // пагинации закреплённый чат с дальней страницы не попал бы наверх списка.
+    const conversations = await Conversation.aggregate([
+      {
+        $match: {
+          participants: userObjectId,
+          deletedFor: { $ne: userObjectId },
+          $or: [
+            { status: { $ne: 'pending' } },
+            { initiatorId: userObjectId },
+          ],
+        },
+      },
+      { $addFields: { isPinned: { $in: [userObjectId, { $ifNull: ['$pinnedBy', []] }] } } },
+      { $sort: { isPinned: -1, updatedAt: -1 } },
+      { $skip: skip },
+      { $limit: limit + 1 },
+    ]);
 
     const hasMore = conversations.length > limit;
     const pageConversations = hasMore ? conversations.slice(0, limit) : conversations;
@@ -198,6 +208,7 @@ async function getConversations(req, res) {
         return {
           _id: conv._id,
           isPrivate: conv.isPrivate || false,
+          isPinned: !!conv.isPinned,
           status: conv.status || 'active',
           initiatorId: conv.initiatorId ? String(conv.initiatorId) : null,
           otherUser: otherUser ? {
@@ -725,6 +736,70 @@ async function startConversation(req, res) {
     });
   } catch (e) {
     console.error('[chat] startConversation error:', e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+}
+
+/**
+ * POST /chats/:conversationId/pin - Закрепить/открепить чат (toggle)
+ */
+async function togglePinConversation(req, res) {
+  try {
+    const userId = getReqUserId(req);
+    const { conversationId } = req.params;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(String(conversationId))) {
+      return res.status(400).json({ message: 'Invalid conversation id' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const conversation = await Conversation.findOne({
+      _id: new mongoose.Types.ObjectId(conversationId),
+      participants: userObjectId,
+    }).lean();
+
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    const isPinned = (conversation.pinnedBy || []).some(id => id.toString() === userId.toString());
+
+    if (isPinned) {
+      await Conversation.updateOne(
+        { _id: conversation._id },
+        { $pull: { pinnedBy: userObjectId } }
+      );
+      return res.json({ conversationId: String(conversation._id), isPinned: false });
+    }
+
+    // Лимит считаем на сервере: клиент может отстать от реального состояния,
+    // если чат закрепили с другого устройства.
+    const pinnedCount = await Conversation.countDocuments({
+      participants: userObjectId,
+      deletedFor: { $ne: userObjectId },
+      pinnedBy: userObjectId,
+    });
+
+    if (pinnedCount >= MAX_PINNED_CONVERSATIONS) {
+      return res.status(409).json({
+        message: `Pin limit reached: ${MAX_PINNED_CONVERSATIONS}`,
+        code: 'PIN_LIMIT_REACHED',
+        limit: MAX_PINNED_CONVERSATIONS,
+      });
+    }
+
+    // $addToSet, а не $push — двойной тап не должен продублировать запись.
+    await Conversation.updateOne(
+      { _id: conversation._id },
+      { $addToSet: { pinnedBy: userObjectId } }
+    );
+
+    return res.json({ conversationId: String(conversation._id), isPinned: true });
+  } catch (e) {
+    console.error('[chat] togglePinConversation error:', e);
     return res.status(500).json({ message: 'Server error' });
   }
 }
@@ -1671,6 +1746,7 @@ module.exports = {
   getStickerPacks,
   markAsRead,
   startConversation,
+  togglePinConversation,
   deleteConversations,
   deletePrivateConversations,
   requestPrivateConversation,

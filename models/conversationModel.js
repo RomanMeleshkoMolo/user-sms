@@ -43,6 +43,13 @@ const conversationSchema = new mongoose.Schema({
     ref: 'User',
   }],
 
+  // Пользователи, закрепившие чат у себя вверху списка. Закрепление личное:
+  // собеседник о нём не знает и своего порядка не меняет.
+  pinnedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+
   // Дата создания и обновления
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
