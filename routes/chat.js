@@ -15,6 +15,7 @@ const {
   getStickerPacks,
   markAsRead,
   startConversation,
+  togglePinConversation,
   deleteConversations,
   deletePrivateConversations,
   requestPrivateConversation,
@@ -87,6 +88,9 @@ router.post('/chats/:recipientId/messages', authRequired, validate(schemas.sendM
 
 // POST /chats/:conversationId/read - Отметить сообщения как прочитанные
 router.post('/chats/:conversationId/read', authRequired, markAsRead);
+
+// POST /chats/:conversationId/pin - Закрепить/открепить чат (toggle)
+router.post('/chats/:conversationId/pin', authRequired, togglePinConversation);
 
 // DELETE /chats - Удалить чаты
 router.delete('/chats', authRequired, deleteConversations);
